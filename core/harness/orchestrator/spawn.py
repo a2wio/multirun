@@ -189,13 +189,20 @@ def apply(manifests: list[dict], namespace: str = "multirun") -> None:
 
 
 def job_status(job_name: str, namespace: str = "multirun") -> str:
-    """pending | running | succeeded | failed | gone"""
+    """pending | running | succeeded | failed | gone
+
+    Reads the whole job, not the /status subresource — the namespaced
+    Role grants "jobs", and "jobs/status" is a different resource. And
+    only a 404 means gone: anything else (rbac, network) must raise,
+    because "the api errored" harvested as "the run finished" once."""
     from kubernetes import client, config
     config.load_incluster_config() if _in_cluster() else config.load_kube_config()
     try:
-        job = client.BatchV1Api().read_namespaced_job_status(job_name, namespace)
-    except Exception:
-        return "gone"
+        job = client.BatchV1Api().read_namespaced_job(job_name, namespace)
+    except client.exceptions.ApiException as e:
+        if e.status == 404:
+            return "gone"
+        raise
     s = job.status
     if s.succeeded:
         return "succeeded"
