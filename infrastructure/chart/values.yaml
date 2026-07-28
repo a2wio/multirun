@@ -5,7 +5,7 @@ images:
   # never roll the controller because a build happened to finish
   core: registry.k6nis.dev/multirun-core:96d967c
   runner: registry.k6nis.dev/multirun-runner:96d967c
-  dashboard: registry.k6nis.dev/multirun-dashboard:99b3362
+  dashboard: registry.k6nis.dev/multirun-dashboard:7bb1766
 
 # secrets the chart expects but never creates — they carry credentials:
 #   claude-creds          .credentials.json   (multirun creds push; rotates,
