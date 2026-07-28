@@ -251,6 +251,12 @@ class Controller:
             neon.NeonBranch(self.api).release(handle)
             self.results.resource(p.fanout, spec.id, "neon-branch", "released")
             spawn.delete_job(p.job_name, self.namespace)
+            # the per-run ConfigMap and Secret go with the Job — the diff is
+            # done, the runner persisted its run.yaml into the artifacts, and
+            # the Secret only ever held the url of a branch that no longer
+            # exists. Left behind they pile up by the fanout-load.
+            spawn.delete_configmap(p.configmap_name, self.namespace)
+            spawn.delete_secret(p.secret_name, self.namespace)
         meta_file = art_dir / "meta.json" if art_dir else None
         if meta_file and meta_file.exists():
             self.results.finish(p.fanout, spec.id, json.loads(

@@ -77,6 +77,12 @@ def run(config_path: Path, extra_env: dict | None = None) -> int:
     workdir = Path(cfg["workdir"])
     artifact_dir = Path(cfg["artifact_dir"])
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    # the exact config is an artifact too: in-cluster it arrives on a
+    # per-run ConfigMap that teardown deletes, so it must outlive it here
+    stored = artifact_dir / "run.yaml"
+    if not (stored.exists() and stored.samefile(config_path)):
+        stored.write_text(Path(config_path).read_text(encoding="utf-8"),
+                          encoding="utf-8")
     started = time.time()
 
     if not workdir.is_dir():

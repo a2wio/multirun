@@ -228,6 +228,24 @@ def delete_job(job_name: str, namespace: str = "multirun") -> None:
         pass  # already gone is the goal state
 
 
+def delete_configmap(name: str, namespace: str = "multirun") -> None:
+    from kubernetes import client, config
+    config.load_incluster_config() if _in_cluster() else config.load_kube_config()
+    try:
+        client.CoreV1Api().delete_namespaced_config_map(name, namespace)
+    except Exception:
+        pass  # already gone is the goal state
+
+
+def delete_secret(name: str, namespace: str = "multirun") -> None:
+    from kubernetes import client, config
+    config.load_incluster_config() if _in_cluster() else config.load_kube_config()
+    try:
+        client.CoreV1Api().delete_namespaced_secret(name, namespace)
+    except Exception:
+        pass  # already gone is the goal state
+
+
 def _in_cluster() -> bool:
     import os
     return os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
