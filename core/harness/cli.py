@@ -90,8 +90,12 @@ def cmd_publish(args) -> None:
     cfg = load(args.config)
     stamp = args.stamp or time.strftime("%m%d%H%M%S")
     instance = plan_mod.instance_name(cfg.name, stamp)
+    # pin the resolved name into the rendered config: the config's name
+    # defaults from its FILENAME, which the controller never sees
+    raw = dict(cfg.raw)
+    raw.setdefault("global", {})["name"] = cfg.name
     body = {"metadata": {"name": args.configmap},
-            "data": {"fanout.yaml": yaml.safe_dump(cfg.raw, sort_keys=False),
+            "data": {"fanout.yaml": yaml.safe_dump(raw, sort_keys=False),
                      "stamp": stamp}}
     from kubernetes import client, config
     config.load_kube_config()
