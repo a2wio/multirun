@@ -1,0 +1,17 @@
+namespace: multirun
+
+images:
+  core: registry.k6nis.dev/multirun-core:latest
+  runner: registry.k6nis.dev/multirun-runner:latest
+
+# secrets the chart expects but never creates — they carry credentials:
+#   claude-creds        .credentials.json   (multirun creds push)
+#   multirun-secrets    NEON_API_KEY, RESULTS_DATABASE_URL
+secrets:
+  claudeCreds: claude-creds
+  env: multirun-secrets
+
+controller:
+  # the fan-out config the controller watches for; mounted from this
+  # configmap once submit-by-configmap lands (deploy phase)
+  configMap: multirun-config

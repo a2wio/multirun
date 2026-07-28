@@ -1,0 +1,6 @@
+# app-nextjs-01 is the template this task targets. It lives as a local
+# checkout today and is not on github yet — the ref below is a
+# placeholder that will fail at clone time with a clear error. Push the
+# template, then pin the real sha here.
+repo: git@github.com:kubeden/app-nextjs-01.git
+ref: "0000000"

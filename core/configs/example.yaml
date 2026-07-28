@@ -1,0 +1,19 @@
+# One yaml defines a fan-out. global: is defaults, runs: is a list of
+# deltas, per-run wins on merge. Mappings merge key-by-key; scalars and
+# lists replace whole. See core/docs/config-reference.md.
+global:
+  task: tasks/add-teams        # source comes from the task's source.yaml,
+                               # unless you override it here
+  model: sonnet
+  timeout: 30m
+  max_parallel: 3              # global-only: one subscription feeds all runs
+  neon:
+    project: your-neon-project-id
+    # parent_branch: main      # optional; default = the project's default
+
+runs:
+  - id: "1"
+  - id: "2"
+    model: opus                # variant: a different model, same task
+  - id: "3"
+    dotenv: envs/run3.env      # variant: extra env from a file

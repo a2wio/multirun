@@ -1,0 +1,13 @@
+# the canary: one tiny run that proves the whole loop — worktree, Neon
+# branch, agent, capture, db diff, teardown. run it after any harness
+# change:  multirun local core/configs/smoke.yaml
+global:
+  task: tasks/smoke            # source comes from tasks/smoke/source.yaml
+  model: haiku                 # the loop is under test, not the agent
+  timeout: 10m
+  max_parallel: 1
+  neon:
+    project: silent-sunset-50603321   # the dedicated multirun project
+
+runs:
+  - id: "1"

@@ -1,0 +1,46 @@
+# the controller: plain Deployment, no CRD, no operator boilerplate.
+# run state lives in the results database, not in etcd.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multirun-core
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: multirun-core
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate            # one controller; two would double-spawn
+  selector:
+    matchLabels:
+      app: multirun-core
+  template:
+    metadata:
+      labels:
+        app: multirun-core
+    spec:
+      serviceAccountName: multirun-core
+      containers:
+        - name: core
+          image: {{ .Values.images.core }}
+          # deploy phase wires the real watch loop; the shape is
+          #   multirun submit /etc/multirun/fanout.yaml --runner-image ...
+          command: ["multirun", "--help"]
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.env }}
+          volumeMounts:
+            - name: claude-creds
+              mountPath: /creds/claude
+              readOnly: true
+            - name: fanout-config
+              mountPath: /etc/multirun
+              readOnly: true
+      volumes:
+        - name: claude-creds
+          secret:
+            secretName: {{ .Values.secrets.claudeCreds }}
+        - name: fanout-config
+          configMap:
+            name: {{ .Values.controller.configMap }}
+            optional: true

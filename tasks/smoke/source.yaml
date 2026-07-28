@@ -1,0 +1,4 @@
+# the smallest real repo that clones in a second — smoke proves the
+# loop, not the task
+repo: https://github.com/kubeden/kubeden.git
+ref: 5b1e367c02ee6a64af54cdb982bb0c677a08cf06
