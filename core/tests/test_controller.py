@@ -3,7 +3,12 @@
 import json
 import time
 
+from harness.config.schema import parse_config
+from harness.orchestrator import controller as controller_mod
+from harness.orchestrator import plan as plan_mod
+from harness.orchestrator import spawn
 from harness.orchestrator.controller import _resolve_task_dir, creds_stale
+from harness.results.db import NullResults
 
 
 def _creds(expires_in_s):
@@ -23,6 +28,43 @@ def test_expiring_and_expired_creds_are_stale():
 def test_unreadable_creds_are_stale_not_a_crash():
     assert creds_stale("not json") is True
     assert creds_stale("{}") is True
+
+
+def test_harvest_tears_down_the_runs_configmap_and_secret(monkeypatch):
+    """The Job used to be the only thing deleted at harvest; the per-run
+    ConfigMap and Secret piled up by the fanout-load."""
+    deleted = []
+    monkeypatch.setattr(spawn, "delete_job",
+                        lambda name, ns: deleted.append(name))
+    monkeypatch.setattr(spawn, "delete_configmap",
+                        lambda name, ns: deleted.append(name))
+    monkeypatch.setattr(spawn, "delete_secret",
+                        lambda name, ns: deleted.append(name))
+
+    class FakeBranch:
+        def __init__(self, api=None, parent_id=None):
+            pass
+
+        def release(self, handle):
+            pass
+
+    monkeypatch.setattr(controller_mod.neon, "NeonBranch", FakeBranch)
+
+    cfg = parse_config({
+        "global": {"name": "bench", "task": "tasks/smoke", "model": "haiku",
+                   "source": {"repo": "https://x/y.git", "ref": "a" * 40},
+                   "neon": {"project": "proj"}},
+        "runs": [{"id": "1"}],
+    })
+    p = plan_mod.plan(cfg, stamp="0728")[0]
+    ctl = controller_mod.Controller.__new__(controller_mod.Controller)
+    ctl.namespace = "multirun"
+    ctl.results = NullResults()
+    ctl.artifacts_root = None
+    ctl.branch_facts = {}
+    ctl.api = None
+    ctl._harvest(p, "succeeded")
+    assert deleted == [p.job_name, p.configmap_name, p.secret_name]
 
 
 def test_default_horizon_is_minutes_not_the_token_lifetime():

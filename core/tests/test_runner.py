@@ -2,8 +2,10 @@
 
 import subprocess
 
+import yaml
+
 from harness.orchestrator.reaper import find_overdue, overdue
-from harness.runner import capture, checks
+from harness.runner import capture, checks, entrypoint
 
 
 def _repo(tmp_path):
@@ -34,6 +36,22 @@ def test_git_capture_clean_tree_is_empty_not_an_error(tmp_path):
     repo, sha = _repo(tmp_path)
     got = capture.git_artifacts(repo, sha, tmp_path / "artifacts")
     assert got["files_changed"] == 0 and got["dirty"] is False
+
+
+def test_runner_persists_its_exact_config_into_artifacts(tmp_path):
+    """In-cluster the config rides a per-run ConfigMap that teardown
+    deletes — the artifacts keep the exact copy, or a postmortem has
+    nothing to read."""
+    config = tmp_path / "run.yaml"
+    config.write_text(yaml.safe_dump({
+        "workdir": str(tmp_path / "never-materialized"),
+        "artifact_dir": str(tmp_path / "art")}))
+    assert entrypoint.run(config) == 2  # missing workdir: early, loud exit
+    stored = tmp_path / "art" / "run.yaml"
+    assert stored.read_text() == config.read_text()
+    # the local path hands the artifact copy itself as the config —
+    # copying a file onto itself must be a no-op, not an error
+    assert entrypoint.run(stored) == 2
 
 
 def test_checks_pass_fail_and_land_in_json(tmp_path):
