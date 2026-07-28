@@ -23,3 +23,5 @@ ENV HOME=/home/agent
 
 ENTRYPOINT ["multirun-runner"]
 CMD ["/config/run.yaml"]
+
+ENV PYTHONUNBUFFERED=1

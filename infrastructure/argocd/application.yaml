@@ -1,4 +1,7 @@
-# written, not applied — wiring argocd is the deploy phase
+# the live copy of this lives in kubeden/kubeden
+# (k8s-cluster-configuration/applications/multirun/), his app-of-apps —
+# argocd can't read this private repo, so the manifests it syncs are the
+# rendered ones there. This file is the reference shape.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -7,15 +10,13 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:a2wio/multirun.git
+    repoURL: https://github.com/kubeden/kubeden.git
     targetRevision: main
-    path: infrastructure/chart
+    path: k8s-cluster-configuration/applications/multirun/base
   destination:
     server: https://kubernetes.default.svc
     namespace: multirun
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true

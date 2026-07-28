@@ -1,0 +1,58 @@
+# Build both images and push them to the cluster registry. Every build
+# tags the short sha; only main moves :latest. The GitOps side
+# (kubeden/kubeden → k8s-cluster-configuration/applications/multirun)
+# pins sha tags, so a deploy is a manifest change, not a rollout restart.
+name: Build and push
+
+on:
+  push:
+    branches: [main, "deploy/**"]   # deploy branches build sha tags, no :latest
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.k6nis.dev
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [core, runner]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tags
+        id: tags
+        run: |
+          short=$(git rev-parse --short HEAD)
+          {
+            echo "tags<<EOF"
+            echo "$REGISTRY/multirun-${{ matrix.image }}:$short"
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              echo "$REGISTRY/multirun-${{ matrix.image }}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/images/${{ matrix.image }}.Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: false   # zot rejects the attestation manifest's digest
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

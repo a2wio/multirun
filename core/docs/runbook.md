@@ -1,5 +1,22 @@
 # runbook
 
+## on the cluster
+
+```sh
+multirun publish core/configs/<config>.yaml   # hand it to the controller
+kubectl -n multirun logs deploy/multirun-core -f    # watch it think
+multirun status                               # jobs by fanout/run
+multirun logs <fanout> <run>                  # one runner's own account
+```
+
+The controller picks a published config up within ~a minute (kubelet
+configmap propagation + the watch interval). Artifacts:
+`/artifacts/<fanout>/<run>/` on the `multirun-artifacts` PVC — read
+them via `kubectl -n multirun exec deploy/multirun-core -- ls /artifacts`
+or copy them off with `kubectl cp`. Auth failures across the board mean
+stale subscription creds: the controller log says so explicitly, and
+`multirun creds push` from a logged-in machine is the reset.
+
 ## prove the loop (local, one run, no cluster)
 
 ```sh

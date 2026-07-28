@@ -20,15 +20,31 @@ spec:
         app: multirun-core
     spec:
       serviceAccountName: multirun-core
+      imagePullSecrets:
+        - name: {{ .Values.secrets.registry }}
       containers:
         - name: core
           image: {{ .Values.images.core }}
-          # deploy phase wires the real watch loop; the shape is
-          #   multirun submit /etc/multirun/fanout.yaml --runner-image ...
-          command: ["multirun", "--help"]
+          command:
+            - multirun
+            - watch
+            - /etc/multirun
+            - --runner-image
+            - {{ .Values.images.runner }}
+            - --namespace
+            - {{ .Values.namespace }}
+          env:
+            - name: PYTHONUNBUFFERED   # logs are the interface; no buffering
+              value: "1"
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.env }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 1Gi     # the creds refresh runs a claude cli turn in here
           volumeMounts:
             - name: claude-creds
               mountPath: /creds/claude
@@ -36,11 +52,17 @@ spec:
             - name: fanout-config
               mountPath: /etc/multirun
               readOnly: true
+            - name: artifacts
+              mountPath: /artifacts
       volumes:
         - name: claude-creds
           secret:
             secretName: {{ .Values.secrets.claudeCreds }}
+            optional: true    # the pod must come up to LOG that creds are missing
         - name: fanout-config
           configMap:
             name: {{ .Values.controller.configMap }}
             optional: true
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.artifacts.claim }}

@@ -18,17 +18,38 @@ MIGRATIONS = Path(__file__).parent / "migrations"
 
 class Results:
     """Thin recorder. All writes are idempotent upserts keyed on
-    (fanout, run_id) so re-recording a transition is harmless."""
+    (fanout, run_id) so re-recording a transition is harmless.
+
+    The connection is long-lived but the server is serverless: Neon
+    idles connections out under a watch loop that ticks for days. Every
+    operation retries once on a dead connection, against a fresh one —
+    idempotent writes make the retry safe."""
 
     def __init__(self, uri: str):
         import psycopg
+        self._psycopg = psycopg
+        self._uri = uri
         self._conn = psycopg.connect(uri, autocommit=True)
 
     @classmethod
     def open(cls, uri: str | None) -> "Results | NullResults":
         return cls(uri) if uri else NullResults()
 
+    def _retry(self, op):
+        try:
+            return op()
+        except self._psycopg.OperationalError:
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001 — it's already dead
+                pass
+            self._conn = self._psycopg.connect(self._uri, autocommit=True)
+            return op()
+
     def migrate(self) -> list[str]:
+        return self._retry(self._migrate)
+
+    def _migrate(self) -> list[str]:
         applied = []
         with self._conn.cursor() as cur:
             cur.execute("""CREATE TABLE IF NOT EXISTS schema_migrations
@@ -46,12 +67,26 @@ class Results:
         return applied
 
     def fanout(self, fanout: str, cfg) -> None:
-        with self._conn.cursor() as cur:
-            cur.execute("""INSERT INTO fanouts (fanout, name, config_yaml)
-                           VALUES (%s, %s, %s) ON CONFLICT (fanout) DO NOTHING""",
-                        (fanout, cfg.name, yaml.safe_dump(cfg.raw)))
+        def op():
+            with self._conn.cursor() as cur:
+                cur.execute("""INSERT INTO fanouts (fanout, name, config_yaml)
+                               VALUES (%s, %s, %s)
+                               ON CONFLICT (fanout) DO NOTHING""",
+                            (fanout, cfg.name, yaml.safe_dump(cfg.raw)))
+        self._retry(op)
+
+    def fanout_exists(self, fanout: str) -> bool:
+        """The watch loop's cross-restart memory: was this instance run?"""
+        def op():
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM fanouts WHERE fanout = %s", (fanout,))
+                return cur.fetchone() is not None
+        return self._retry(op)
 
     def state(self, fanout: str, run_id: str, state) -> None:
+        return self._retry(lambda: self._state(fanout, run_id, state))
+
+    def _state(self, fanout: str, run_id: str, state) -> None:
         state = getattr(state, "value", state)
         with self._conn.cursor() as cur:
             cur.execute("""INSERT INTO runs (fanout, run_id, state)
@@ -64,6 +99,9 @@ class Results:
                            VALUES (%s, %s, %s)""", (fanout, run_id, state))
 
     def resource(self, fanout: str, run_id: str, kind: str, status: str) -> None:
+        return self._retry(lambda: self._resource(fanout, run_id, kind, status))
+
+    def _resource(self, fanout: str, run_id: str, kind: str, status: str) -> None:
         with self._conn.cursor() as cur:
             cur.execute("""INSERT INTO resources (fanout, run_id, kind, status)
                            VALUES (%s, %s, %s, %s)
@@ -73,6 +111,9 @@ class Results:
                         (fanout, run_id, kind, status))
 
     def finish(self, fanout: str, run_id: str, meta: dict) -> None:
+        return self._retry(lambda: self._finish(fanout, run_id, meta))
+
+    def _finish(self, fanout: str, run_id: str, meta: dict) -> None:
         usage = meta.get("usage") or {}
         with self._conn.cursor() as cur:
             cur.execute("""UPDATE runs SET
@@ -94,6 +135,9 @@ class NullResults:
 
     def fanout(self, *a, **k) -> None:
         pass
+
+    def fanout_exists(self, *a, **k) -> bool:
+        return False  # no db, no memory — the watch loop warns about this
 
     def state(self, *a, **k) -> None:
         pass

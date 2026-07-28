@@ -65,3 +65,24 @@ def test_find_overdue_sorts_worst_first():
     got = find_overdue(active, grace_s=0, now=700.0)
     assert [o.job_name for o in got] == ["job-b", "job-a"]
     assert got[0].seconds_over == 640
+
+
+def test_creds_materialize_into_a_writable_home(tmp_path):
+    from harness.runner.entrypoint import materialize_creds
+    mounted = tmp_path / "mount" / ".credentials.json"
+    mounted.parent.mkdir()
+    mounted.write_text('{"claudeAiOauth": {}}')
+    home = tmp_path / "home"
+    line = materialize_creds({"MULTIRUN_CLAUDE_CREDS": str(mounted)}, home)
+    dst = home / ".claude" / ".credentials.json"
+    assert dst.read_text() == '{"claudeAiOauth": {}}'
+    assert (dst.stat().st_mode & 0o777) == 0o600
+    assert "materialized" in line
+
+
+def test_missing_creds_mount_is_loud_and_local_runs_are_quiet(tmp_path):
+    from harness.runner.entrypoint import materialize_creds
+    assert materialize_creds({}, tmp_path) == ""
+    line = materialize_creds({"MULTIRUN_CLAUDE_CREDS": str(tmp_path / "gone")},
+                             tmp_path)
+    assert "EMPTY" in line and "creds push" in line

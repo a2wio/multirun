@@ -69,7 +69,8 @@ def cmd_submit(args) -> None:
     cfg = load(args.config)
     ctl = controller.Controller(cfg, Path(args.config),
                                 runner_image=args.runner_image,
-                                namespace=args.namespace)
+                                namespace=args.namespace,
+                                artifacts_claim=args.artifacts_pvc or None)
     print(f"fanout {ctl.plans[0].fanout}: {len(ctl.plans)} run(s), "
           f"max_parallel={cfg.max_parallel}")
     import time
@@ -77,6 +78,49 @@ def cmd_submit(args) -> None:
         reaper.reap(ctl)
         time.sleep(10)
     print("fanout complete")
+
+
+def cmd_publish(args) -> None:
+    """Render a fanout config into the controller's ConfigMap. The
+    in-cluster watch loop picks it up within its interval; the stamp
+    names the instance, so publishing the same config twice runs it
+    twice — deliberately."""
+    import time
+
+    cfg = load(args.config)
+    stamp = args.stamp or time.strftime("%m%d%H%M%S")
+    instance = plan_mod.instance_name(cfg.name, stamp)
+    # pin the resolved name into the rendered config: the config's name
+    # defaults from its FILENAME, which the controller never sees
+    raw = dict(cfg.raw)
+    raw.setdefault("global", {})["name"] = cfg.name
+    body = {"metadata": {"name": args.configmap},
+            "data": {"fanout.yaml": yaml.safe_dump(raw, sort_keys=False),
+                     "stamp": stamp}}
+    from kubernetes import client, config
+    config.load_kube_config()
+    api = client.CoreV1Api()
+    try:
+        api.patch_namespaced_config_map(args.configmap, args.namespace, body)
+    except client.exceptions.ApiException as e:
+        if e.status != 404:
+            raise
+        api.create_namespaced_config_map(
+            args.namespace, {**body, "apiVersion": "v1", "kind": "ConfigMap"})
+    print(f"published {instance}: {len(cfg.runs)} run(s), "
+          f"max_parallel={cfg.max_parallel} -> configmap {args.configmap}")
+
+
+def cmd_watch(args) -> None:
+    from pathlib import Path as P
+
+    from .orchestrator import watch as watch_mod
+    watch_mod.watch(P(args.config_dir), runner_image=args.runner_image,
+                    namespace=args.namespace, creds_dir=P(args.creds_dir),
+                    creds_secret=args.creds_secret,
+                    artifacts_root=P(args.artifacts_root),
+                    artifacts_claim=args.artifacts_pvc,
+                    interval_s=args.interval, once=args.once)
 
 
 def cmd_status(args) -> None:
@@ -134,19 +178,36 @@ def cmd_db_migrate(args) -> None:
     print(f"applied: {', '.join(applied) if applied else 'nothing — up to date'}")
 
 
+def _local_credentials() -> str:
+    """The claude CLI's own login: a file on linux, the Keychain on
+    macOS. Either way, the content is the .credentials.json the pods
+    mount."""
+    creds = Path.home() / ".claude" / ".credentials.json"
+    if creds.exists():
+        return creds.read_text(encoding="utf-8")
+    if sys.platform == "darwin":
+        import subprocess
+        proc = subprocess.run(
+            ["security", "find-generic-password",
+             "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True)
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    raise SystemExit(f"no credentials at {creds} (or in the Keychain) — "
+                     "log the claude CLI in first")
+
+
 def cmd_creds_push(args) -> None:
     """Push the local subscription creds into the cluster Secret. Re-run
     whenever they rotate; the controller warns when they go stale."""
-    creds = Path.home() / ".claude" / ".credentials.json"
-    if not creds.exists():
-        raise SystemExit(f"{creds} not found — log the claude CLI in first")
-    if controller.creds_stale(creds.read_text(encoding="utf-8")):
+    content = _local_credentials()
+    if controller.creds_stale(content):
         print("warning: these creds expire within the hour; refresh first "
               "(any `claude -p` turn does it)", file=sys.stderr)
     from kubernetes import client, config
     config.load_kube_config()
     body = {"metadata": {"name": args.secret},
-            "stringData": {".credentials.json": creds.read_text(encoding="utf-8")}}
+            "stringData": {".credentials.json": content}}
     api = client.CoreV1Api()
     try:
         api.patch_namespaced_secret(args.secret, args.namespace, body)
@@ -180,10 +241,32 @@ def main() -> None:
     p.add_argument("--keep", action="store_true",
                    help="skip teardown — the branch keeps billing")
 
-    p = add("submit", cmd_submit, help="fan out on the cluster")
+    p = add("submit", cmd_submit, help="fan out on the cluster, driven from here")
     p.add_argument("config")
     p.add_argument("--runner-image", required=True)
     p.add_argument("--namespace", default="multirun")
+    p.add_argument("--artifacts-pvc", default="multirun-artifacts",
+                   help="PVC the run pods write artifacts to; '' for emptyDir")
+
+    p = add("publish", cmd_publish,
+            help="hand a fanout to the in-cluster controller")
+    p.add_argument("config")
+    p.add_argument("--configmap", default="multirun-config")
+    p.add_argument("--namespace", default="multirun")
+    p.add_argument("--stamp", help="fix the instance stamp (for reproducibility)")
+
+    p = add("watch", cmd_watch,
+            help="the controller loop: watch a config dir, run what appears")
+    p.add_argument("config_dir")
+    p.add_argument("--runner-image", required=True)
+    p.add_argument("--namespace", default="multirun")
+    p.add_argument("--creds-dir", default="/creds/claude")
+    p.add_argument("--creds-secret", default="claude-creds")
+    p.add_argument("--artifacts-root", default="/artifacts")
+    p.add_argument("--artifacts-pvc", default="multirun-artifacts")
+    p.add_argument("--interval", type=int, default=15)
+    p.add_argument("--once", action="store_true",
+                   help="one tick, then exit (for smoke-testing the loop)")
 
     p = add("status", cmd_status)
     p.add_argument("--namespace", default="multirun")
