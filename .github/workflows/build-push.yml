@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [core, runner]
+        image: [core, runner, dashboard]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

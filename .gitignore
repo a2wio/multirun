@@ -7,3 +7,4 @@ artifacts/
 .multirun-work/
 envs/
 *.env
+node_modules/
