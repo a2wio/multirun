@@ -27,6 +27,7 @@ is no api-key path anywhere in the runner.
         diff/            branch vs parent: schema and rows
         results/         run history, on Neon, queryable in SQL
     tasks/           content, not code: one dir per task (prompt, source, seed, checks)
+    dashboard/       the read-only web ui: results db + artifacts volume, htmx, no build step
     infrastructure/  images, chart, argocd — written; deploying is its own phase
 
 ## start here
