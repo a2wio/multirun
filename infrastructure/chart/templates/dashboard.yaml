@@ -1,0 +1,70 @@
+# the dashboard: a read-only window onto the bench. No serviceaccount
+# and no rbac on purpose — it reads the results db and the artifacts
+# volume, and the cluster api is none of its business.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multirun-dashboard
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: multirun-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multirun-dashboard
+  template:
+    metadata:
+      labels:
+        app: multirun-dashboard
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.secrets.registry }}
+      containers:
+        - name: dashboard
+          image: {{ .Values.images.dashboard }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: ARTIFACTS_ROOT
+              value: /artifacts
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.dashboard }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: artifacts
+              mountPath: /artifacts
+              readOnly: true
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.artifacts.claim }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multirun-dashboard
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: multirun-dashboard
+spec:
+  selector:
+    app: multirun-dashboard
+  ports:
+    - port: 80
+      targetPort: 3000
