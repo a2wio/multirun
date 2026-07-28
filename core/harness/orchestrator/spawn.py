@@ -149,11 +149,14 @@ def build_job(p: RunPlan, *, runner_image: str,
                              "mountPath": "/creds/claude",
                              "readOnly": True},
                         ],
-                        # the node is small and shared: requests keep the
-                        # scheduler honest, the memory limit keeps a runaway
-                        # npm build from evicting the neighbors
+                        # the node is small and shared, and an agent run
+                        # mostly waits on the model: three concurrent runners
+                        # measured ~0.5 cpu between them, while 500m each
+                        # requested the node solid and left runs Pending. The
+                        # memory limit keeps a runaway npm build from
+                        # evicting the neighbors.
                         "resources": {
-                            "requests": {"cpu": "500m", "memory": "512Mi"},
+                            "requests": {"cpu": "150m", "memory": "512Mi"},
                             "limits": {"memory": "2Gi"},
                         },
                     }],

@@ -48,14 +48,74 @@ def test_missing_creds_log_says_how_to_fix_it(tmp_path):
 
 
 def test_fresh_creds_stay_quiet(tmp_path):
-    import json
-    import time
-    (tmp_path / ".credentials.json").write_text(json.dumps(
-        {"claudeAiOauth": {"expiresAt": (time.time() + 7200) * 1000}}))
+    _write_creds(tmp_path, expires_in_s=7200)
     lines = []
     creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
                log=lines.append)
     assert lines == []
+
+
+def _write_creds(tmp_path, expires_in_s):
+    import json
+    import time
+    (tmp_path / ".credentials.json").write_text(json.dumps(
+        {"claudeAiOauth": {"expiresAt": (time.time() + expires_in_s) * 1000}}))
+
+
+def test_probe_that_authenticates_is_one_line_then_quiet(tmp_path, monkeypatch):
+    """Near-expiry creds whose file never rotates used to nag every
+    tick — and burn a CLI turn every tick doing it."""
+    _write_creds(tmp_path, expires_in_s=60)
+    turns = []
+    monkeypatch.setattr("harness.orchestrator.controller.refresh_creds",
+                        lambda d: turns.append(d) or (True, None))
+    lines, state = [], {}
+    for _ in range(3):
+        creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
+                   log=lines.append, state=state)
+    assert len(turns) == 1  # cooldown holds: one probe, not one per tick
+    assert len(lines) == 1 and "healthy" in lines[0]
+
+
+def test_probe_that_cannot_authenticate_is_loud(tmp_path, monkeypatch):
+    _write_creds(tmp_path, expires_in_s=60)
+    monkeypatch.setattr("harness.orchestrator.controller.refresh_creds",
+                        lambda d: (False, None))
+    lines = []
+    creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
+               log=lines.append, state={})
+    assert "REFRESH FAILED" in lines[0] and "creds push" in lines[0]
+
+
+def test_rotated_creds_are_pushed_back_into_the_secret(tmp_path, monkeypatch):
+    _write_creds(tmp_path, expires_in_s=60)
+    monkeypatch.setattr("harness.orchestrator.controller.refresh_creds",
+                        lambda d: (True, '{"rotated": true}'))
+    pushed = {}
+    monkeypatch.setattr(
+        "harness.orchestrator.watch._patch_creds_secret",
+        lambda name, ns, content: pushed.update(name=name, content=content))
+    lines = []
+    creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
+               log=lines.append, state={})
+    assert pushed == {"name": "claude-creds", "content": '{"rotated": true}'}
+    assert "pushed back" in lines[0]
+
+
+def test_replaced_creds_file_resets_the_cooldown(tmp_path, monkeypatch):
+    """`multirun creds push` mid-cooldown lands new content; the next
+    tick must probe it instead of sitting out the clock."""
+    _write_creds(tmp_path, expires_in_s=60)
+    turns = []
+    monkeypatch.setattr("harness.orchestrator.controller.refresh_creds",
+                        lambda d: turns.append(d) or (True, None))
+    state: dict = {}
+    creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
+               log=lambda _: None, state=state)
+    _write_creds(tmp_path, expires_in_s=90)  # different content, still stale
+    creds_tick(tmp_path, namespace="multirun", secret="claude-creds",
+               log=lambda _: None, state=state)
+    assert len(turns) == 2
 
 
 def test_no_results_db_means_no_memory_and_no_crash():

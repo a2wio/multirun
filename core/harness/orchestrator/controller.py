@@ -267,9 +267,15 @@ class Controller:
 
 # -- credential freshness -----------------------------------------------------
 
-def creds_stale(credentials_json: str, horizon_s: int = 3600) -> bool:
-    """True when the oauth access token is within horizon of expiring.
-    Pure: feed it the mounted Secret's .credentials.json content."""
+def creds_stale(credentials_json: str, horizon_s: int = 300) -> bool:
+    """True when the oauth access token is expired or about to be.
+
+    Access tokens are minted with under an hour on the clock, so any
+    horizon near an hour is true on every tick — the horizon is only
+    slack for a refresh to land before the token actually dies. What
+    keeps runs authenticating is the refresh token; this predicate just
+    picks the moment to exercise it. Pure: feed it the mounted Secret's
+    .credentials.json content."""
     try:
         expires_ms = json.loads(credentials_json)["claudeAiOauth"]["expiresAt"]
     except (json.JSONDecodeError, KeyError, TypeError):
@@ -277,18 +283,21 @@ def creds_stale(credentials_json: str, horizon_s: int = 3600) -> bool:
     return (expires_ms / 1000 - time.time()) < horizon_s
 
 
-def refresh_creds(creds_dir: Path) -> str | None:
+def refresh_creds(creds_dir: Path) -> tuple[bool, str | None]:
     """Run one no-op CLI turn on a writable copy of the creds; the CLI
-    refreshes its own token. Returns the rotated file's content when it
-    changed, for the caller to push back into the Secret."""
+    refreshes its own token. Returns (turn_ok, rotated): the rotated
+    file's content when it changed, for the caller to push back into
+    the Secret — and whether the turn itself authenticated, because a
+    turn that completes proves the refresh token works even when the
+    CLI saw no reason to rewrite the file."""
     src = creds_dir / ".credentials.json"
     before = src.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="mr-creds-") as tmp:
         home = Path(tmp)
         (home / ".claude").mkdir()
         shutil.copy(src, home / ".claude" / ".credentials.json")
-        subprocess.run(["claude", "-p", "ok", "--model", "haiku"],
-                       env={**os.environ, "HOME": str(home)},
-                       capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(["claude", "-p", "ok", "--model", "haiku"],
+                              env={**os.environ, "HOME": str(home)},
+                              capture_output=True, text=True, timeout=120)
         after = (home / ".claude" / ".credentials.json").read_text(encoding="utf-8")
-    return after if after != before else None
+    return proc.returncode == 0, (after if after != before else None)
