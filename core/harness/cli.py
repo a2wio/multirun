@@ -174,19 +174,36 @@ def cmd_db_migrate(args) -> None:
     print(f"applied: {', '.join(applied) if applied else 'nothing — up to date'}")
 
 
+def _local_credentials() -> str:
+    """The claude CLI's own login: a file on linux, the Keychain on
+    macOS. Either way, the content is the .credentials.json the pods
+    mount."""
+    creds = Path.home() / ".claude" / ".credentials.json"
+    if creds.exists():
+        return creds.read_text(encoding="utf-8")
+    if sys.platform == "darwin":
+        import subprocess
+        proc = subprocess.run(
+            ["security", "find-generic-password",
+             "-s", "Claude Code-credentials", "-w"],
+            capture_output=True, text=True)
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    raise SystemExit(f"no credentials at {creds} (or in the Keychain) — "
+                     "log the claude CLI in first")
+
+
 def cmd_creds_push(args) -> None:
     """Push the local subscription creds into the cluster Secret. Re-run
     whenever they rotate; the controller warns when they go stale."""
-    creds = Path.home() / ".claude" / ".credentials.json"
-    if not creds.exists():
-        raise SystemExit(f"{creds} not found — log the claude CLI in first")
-    if controller.creds_stale(creds.read_text(encoding="utf-8")):
+    content = _local_credentials()
+    if controller.creds_stale(content):
         print("warning: these creds expire within the hour; refresh first "
               "(any `claude -p` turn does it)", file=sys.stderr)
     from kubernetes import client, config
     config.load_kube_config()
     body = {"metadata": {"name": args.secret},
-            "stringData": {".credentials.json": creds.read_text(encoding="utf-8")}}
+            "stringData": {".credentials.json": content}}
     api = client.CoreV1Api()
     try:
         api.patch_namespaced_secret(args.secret, args.namespace, body)
