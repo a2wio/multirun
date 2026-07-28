@@ -46,8 +46,10 @@ def build_run_yaml(p: RunPlan, *, task_name: str,
 
 def build_configmap(p: RunPlan, *, task_name: str, task_md: str,
                     checks: dict[str, str] | None = None,
-                    namespace: str = "multirun") -> dict:
-    data = {"run.yaml": build_run_yaml(p, task_name=task_name),
+                    namespace: str = "multirun",
+                    artifact_dir: str | None = None) -> dict:
+    data = {"run.yaml": build_run_yaml(p, task_name=task_name,
+                                       artifact_dir=artifact_dir or "/artifacts"),
             "task.md": task_md}
     for name, content in (checks or {}).items():
         data[f"checks__{name}"] = content
@@ -70,14 +72,32 @@ def build_job(p: RunPlan, *, runner_image: str,
               check_names: list[str] | None = None,
               creds_secret: str = "claude-creds",
               service_account: str = "multirun-runner",
-              namespace: str = "multirun") -> dict:
+              namespace: str = "multirun",
+              artifacts_claim: str | None = None,
+              deploy_key_secret: str = "source-deploy-key",
+              pull_secret: str = "registry-credentials") -> dict:
+    # artifacts: the shared PVC when given (they outlive the pod, and the
+    # controller reads them at harvest), an emptyDir when not (local dev
+    # against a cluster with no volume — artifacts die with the pod).
+    artifacts_volume = (
+        {"name": "artifacts",
+         "persistentVolumeClaim": {"claimName": artifacts_claim}}
+        if artifacts_claim else {"name": "artifacts", "emptyDir": {}})
     volumes = [
         {"name": "config",
          "configMap": {"name": p.configmap_name,
                        "items": _configmap_items(check_names or [])}},
         {"name": "work", "emptyDir": {}},
-        {"name": "artifacts", "emptyDir": {}},
+        artifacts_volume,
+        # mounted OUTSIDE $HOME: the CLI needs a writable ~/.claude, so the
+        # runner copies the credentials in at start (entrypoint.py)
         {"name": "claude-creds", "secret": {"secretName": creds_secret}},
+        # read-only deploy key for private sources; optional so public
+        # sources need nothing. ssh rejects the mount's permissions, so the
+        # init container copies it private first (worktree.py).
+        {"name": "deploy-key",
+         "secret": {"secretName": deploy_key_secret, "optional": True,
+                    "defaultMode": 0o444}},
     ]
     common_mounts = [
         {"name": "config", "mountPath": "/config", "readOnly": True},
@@ -96,25 +116,46 @@ def build_job(p: RunPlan, *, runner_image: str,
                 "spec": {
                     "restartPolicy": "Never",
                     "serviceAccountName": service_account,
+                    "imagePullSecrets": [{"name": pull_secret}],
                     "initContainers": [{
                         "name": "worktree",
                         "image": runner_image,
                         "command": ["python", "-m", "harness.resources.worktree",
                                     "/config/run.yaml", "/work"],
-                        "volumeMounts": common_mounts,
+                        "env": [{"name": "MULTIRUN_DEPLOY_KEY",
+                                 "value": "/deploy-key/key"}],
+                        "volumeMounts": common_mounts + [
+                            {"name": "deploy-key", "mountPath": "/deploy-key",
+                             "readOnly": True},
+                        ],
+                        "resources": {
+                            "requests": {"cpu": "100m", "memory": "128Mi"},
+                            "limits": {"memory": "512Mi"},
+                        },
                     }],
                     "containers": [{
                         "name": "runner",
                         "image": runner_image,
                         "command": ["multirun-runner", "/config/run.yaml"],
-                        "env": [{"name": "HOME", "value": "/home/agent"}],
+                        "env": [
+                            {"name": "HOME", "value": "/home/agent"},
+                            {"name": "MULTIRUN_CLAUDE_CREDS",
+                             "value": "/creds/claude/.credentials.json"},
+                        ],
                         "envFrom": [{"secretRef": {"name": p.secret_name}}],
                         "volumeMounts": common_mounts + [
                             {"name": "artifacts", "mountPath": "/artifacts"},
                             {"name": "claude-creds",
-                             "mountPath": "/home/agent/.claude",
+                             "mountPath": "/creds/claude",
                              "readOnly": True},
                         ],
+                        # the node is small and shared: requests keep the
+                        # scheduler honest, the memory limit keeps a runaway
+                        # npm build from evicting the neighbors
+                        "resources": {
+                            "requests": {"cpu": "500m", "memory": "512Mi"},
+                            "limits": {"memory": "2Gi"},
+                        },
                     }],
                     "volumes": volumes,
                 },

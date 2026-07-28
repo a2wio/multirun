@@ -143,10 +143,23 @@ One k8s Job per run (`orchestrator/spawn.py`). The pod:
 The controller loop (`orchestrator/controller.py`) spawns up to
 `max_parallel`, polls, diffs, tears down, records. The reaper
 (`orchestrator/reaper.py`) kills overdue jobs past timeout + grace and
-sweeps leaked branches. Job manifests are pure functions with tests;
-the loop is written to the same states as the proven local path but
-has not met a real cluster yet — deploying is its own phase, and this
-document does not claim otherwise.
+sweeps leaked branches. Job manifests are pure functions with tests.
+
+The controller's front door is `orchestrator/watch.py`: the Deployment
+runs `multirun watch /etc/multirun`, and `multirun publish <config>`
+hands it work by rendering the config into a ConfigMap with a stamp.
+The stamp names the fanout instance deterministically, and the results
+db is the cross-restart memory — a restarted controller skips instances
+it already knows and leaves their leftovers to the reaper. The watch
+loop also owns credential freshness (below), because it is the one
+place that runs forever.
+
+Run artifacts outlive their pods on a shared PVC: the runner writes
+its dir, the controller writes the db diffs into the same dir at
+harvest and lifts `meta.json` into the results db. Private sources
+clone with a read-only deploy key the init container prepares itself
+(`resources/worktree.py`) — the key Secret is optional, public sources
+need nothing.
 
 ## The local path
 
@@ -169,11 +182,6 @@ is the queryable view.
 
 ## Deliberately deferred
 
-- **Deploy**: applying the chart, ArgoCD wiring, a real 10-way
-  fan-out. Manifests are written, nothing is applied.
-- **Artifact shipping off the pod**: emptyDir today; object storage or
-  a PVC is the first deploy-phase task (`resources/storage.py` is the
-  one file that changes).
 - **The results dashboard**: the schema is the contract; views come
   later.
 - **Keyed data diffs**: `data_diff.py` compares row-hash multisets, so
@@ -182,6 +190,9 @@ is the queryable view.
 - **Prompt variants as first-class variant axis**: today a variant is
   model/env/dotenv; per-run prompt overrides ride on tasks, not on
   config keys.
-- **In-cluster controller watch loop**: the Deployment's command is a
-  placeholder until the deploy phase wires config pickup.
-- **Deploy keys for private sources** in the init container's clone.
+- **Object storage for artifacts**: they live on a single-node PVC;
+  when the cluster grows past one node, `resources/storage.py` is
+  still the one file that changes.
+- **Resuming a fanout the controller crashed out of**: a restart
+  skips it and the reaper sweeps; the runs it never spawned are simply
+  missing from the results. Rerun the config if they matter.

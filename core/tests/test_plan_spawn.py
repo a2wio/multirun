@@ -89,13 +89,54 @@ def test_job_shape():
 def test_no_api_key_path_anywhere_in_the_job():
     job = spawn.build_job(plans()[0], runner_image="img")
     assert "ANTHROPIC_API_KEY" not in yaml.safe_dump(job)
-    mounts = job["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
-    creds = [m for m in mounts if m["name"] == "claude-creds"]
-    assert creds and creds[0]["mountPath"] == "/home/agent/.claude"
-    assert creds[0]["readOnly"] is True
 
 
 def test_labels_carry_the_fingerprint():
     job = spawn.build_job(plans()[0], runner_image="img")
     assert job["metadata"]["labels"]["multirun/fanout"] == "bench-0728"
     assert job["metadata"]["labels"]["multirun/run"] == "1"
+
+
+def test_artifact_dir_flows_into_the_run_yaml():
+    cm = spawn.build_configmap(plans()[0], task_name="t", task_md="x",
+                               artifact_dir="/artifacts/bench-0728/1")
+    got = yaml.safe_load(cm["data"]["run.yaml"])
+    assert got["artifact_dir"] == "/artifacts/bench-0728/1"
+
+
+def test_artifacts_ride_the_pvc_when_given_emptydir_when_not():
+    p = plans()[0]
+    job = spawn.build_job(p, runner_image="img", artifacts_claim="multirun-artifacts")
+    vols = {v["name"]: v for v in job["spec"]["template"]["spec"]["volumes"]}
+    assert vols["artifacts"]["persistentVolumeClaim"]["claimName"] == "multirun-artifacts"
+    job = spawn.build_job(p, runner_image="img")
+    vols = {v["name"]: v for v in job["spec"]["template"]["spec"]["volumes"]}
+    assert vols["artifacts"] == {"name": "artifacts", "emptyDir": {}}
+
+
+def test_deploy_key_is_optional_and_only_the_init_container_sees_it():
+    job = spawn.build_job(plans()[0], runner_image="img")
+    pod = job["spec"]["template"]["spec"]
+    vols = {v["name"]: v for v in pod["volumes"]}
+    assert vols["deploy-key"]["secret"]["optional"] is True
+    init = pod["initContainers"][0]
+    assert {"name": "MULTIRUN_DEPLOY_KEY", "value": "/deploy-key/key"} in init["env"]
+    runner_mounts = [m["name"] for m in pod["containers"][0]["volumeMounts"]]
+    assert "deploy-key" not in runner_mounts
+
+
+def test_runner_gets_creds_outside_home_and_copies_them_in():
+    job = spawn.build_job(plans()[0], runner_image="img")
+    runner = job["spec"]["template"]["spec"]["containers"][0]
+    creds = [m for m in runner["volumeMounts"] if m["name"] == "claude-creds"]
+    assert creds and creds[0]["mountPath"] == "/creds/claude"
+    assert creds[0]["readOnly"] is True
+    assert {"name": "MULTIRUN_CLAUDE_CREDS",
+            "value": "/creds/claude/.credentials.json"} in runner["env"]
+
+
+def test_the_small_shared_node_is_protected():
+    job = spawn.build_job(plans()[0], runner_image="img")
+    pod = job["spec"]["template"]["spec"]
+    assert pod["imagePullSecrets"] == [{"name": "registry-credentials"}]
+    assert pod["containers"][0]["resources"]["limits"]["memory"] == "2Gi"

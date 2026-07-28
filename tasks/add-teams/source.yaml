@@ -1,6 +1,7 @@
-# app-nextjs-01 is the template this task targets. It lives as a local
-# checkout today and is not on github yet — the ref below is a
-# placeholder that will fail at clone time with a clear error. Push the
-# template, then pin the real sha here.
+# kubeden/app-nextjs-01 — the Neon web-app template, private. The
+# runner's init container clones it with the read-only deploy key
+# (Secret: source-deploy-key). The sha is the template's import commit:
+# every run starts from exactly this tree or the comparison means nothing.
 repo: git@github.com:kubeden/app-nextjs-01.git
-ref: "0000000"
+ref: 0d5826c43bf7876a8563ca373138cb83a85683d4
+seed: seed

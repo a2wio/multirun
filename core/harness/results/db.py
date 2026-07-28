@@ -51,6 +51,12 @@ class Results:
                            VALUES (%s, %s, %s) ON CONFLICT (fanout) DO NOTHING""",
                         (fanout, cfg.name, yaml.safe_dump(cfg.raw)))
 
+    def fanout_exists(self, fanout: str) -> bool:
+        """The watch loop's cross-restart memory: was this instance run?"""
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM fanouts WHERE fanout = %s", (fanout,))
+            return cur.fetchone() is not None
+
     def state(self, fanout: str, run_id: str, state) -> None:
         state = getattr(state, "value", state)
         with self._conn.cursor() as cur:
@@ -94,6 +100,9 @@ class NullResults:
 
     def fanout(self, *a, **k) -> None:
         pass
+
+    def fanout_exists(self, *a, **k) -> bool:
+        return False  # no db, no memory — the watch loop warns about this
 
     def state(self, *a, **k) -> None:
         pass

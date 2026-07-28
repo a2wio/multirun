@@ -69,7 +69,8 @@ def cmd_submit(args) -> None:
     cfg = load(args.config)
     ctl = controller.Controller(cfg, Path(args.config),
                                 runner_image=args.runner_image,
-                                namespace=args.namespace)
+                                namespace=args.namespace,
+                                artifacts_claim=args.artifacts_pvc or None)
     print(f"fanout {ctl.plans[0].fanout}: {len(ctl.plans)} run(s), "
           f"max_parallel={cfg.max_parallel}")
     import time
@@ -77,6 +78,45 @@ def cmd_submit(args) -> None:
         reaper.reap(ctl)
         time.sleep(10)
     print("fanout complete")
+
+
+def cmd_publish(args) -> None:
+    """Render a fanout config into the controller's ConfigMap. The
+    in-cluster watch loop picks it up within its interval; the stamp
+    names the instance, so publishing the same config twice runs it
+    twice — deliberately."""
+    import time
+
+    cfg = load(args.config)
+    stamp = args.stamp or time.strftime("%m%d%H%M%S")
+    instance = plan_mod.instance_name(cfg.name, stamp)
+    body = {"metadata": {"name": args.configmap},
+            "data": {"fanout.yaml": yaml.safe_dump(cfg.raw, sort_keys=False),
+                     "stamp": stamp}}
+    from kubernetes import client, config
+    config.load_kube_config()
+    api = client.CoreV1Api()
+    try:
+        api.patch_namespaced_config_map(args.configmap, args.namespace, body)
+    except client.exceptions.ApiException as e:
+        if e.status != 404:
+            raise
+        api.create_namespaced_config_map(
+            args.namespace, {**body, "apiVersion": "v1", "kind": "ConfigMap"})
+    print(f"published {instance}: {len(cfg.runs)} run(s), "
+          f"max_parallel={cfg.max_parallel} -> configmap {args.configmap}")
+
+
+def cmd_watch(args) -> None:
+    from pathlib import Path as P
+
+    from .orchestrator import watch as watch_mod
+    watch_mod.watch(P(args.config_dir), runner_image=args.runner_image,
+                    namespace=args.namespace, creds_dir=P(args.creds_dir),
+                    creds_secret=args.creds_secret,
+                    artifacts_root=P(args.artifacts_root),
+                    artifacts_claim=args.artifacts_pvc,
+                    interval_s=args.interval, once=args.once)
 
 
 def cmd_status(args) -> None:
@@ -180,10 +220,32 @@ def main() -> None:
     p.add_argument("--keep", action="store_true",
                    help="skip teardown — the branch keeps billing")
 
-    p = add("submit", cmd_submit, help="fan out on the cluster")
+    p = add("submit", cmd_submit, help="fan out on the cluster, driven from here")
     p.add_argument("config")
     p.add_argument("--runner-image", required=True)
     p.add_argument("--namespace", default="multirun")
+    p.add_argument("--artifacts-pvc", default="multirun-artifacts",
+                   help="PVC the run pods write artifacts to; '' for emptyDir")
+
+    p = add("publish", cmd_publish,
+            help="hand a fanout to the in-cluster controller")
+    p.add_argument("config")
+    p.add_argument("--configmap", default="multirun-config")
+    p.add_argument("--namespace", default="multirun")
+    p.add_argument("--stamp", help="fix the instance stamp (for reproducibility)")
+
+    p = add("watch", cmd_watch,
+            help="the controller loop: watch a config dir, run what appears")
+    p.add_argument("config_dir")
+    p.add_argument("--runner-image", required=True)
+    p.add_argument("--namespace", default="multirun")
+    p.add_argument("--creds-dir", default="/creds/claude")
+    p.add_argument("--creds-secret", default="claude-creds")
+    p.add_argument("--artifacts-root", default="/artifacts")
+    p.add_argument("--artifacts-pvc", default="multirun-artifacts")
+    p.add_argument("--interval", type=int, default=15)
+    p.add_argument("--once", action="store_true",
+                   help="one tick, then exit (for smoke-testing the loop)")
 
     p = add("status", cmd_status)
     p.add_argument("--namespace", default="multirun")

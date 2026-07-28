@@ -11,9 +11,11 @@ materialize the checkout before the runner container starts — the
 runner itself acquires nothing.
 """
 
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from hashlib import sha256
 from pathlib import Path
 
@@ -98,12 +100,33 @@ class Worktree(Resource):
                Path(run.facts.get("workdir") or self.workdir_for(run)))
 
 
+def prepare_deploy_key(env: dict | None = None) -> str | None:
+    """Point git's ssh at the mounted deploy key, if one is mounted.
+
+    ssh refuses group/world-readable keys and a Secret mount can't be
+    chowned to the runner's uid — so the key is copied to a private file
+    first. Returns the GIT_SSH_COMMAND it set, or None when there is no
+    key to prepare (public sources need nothing)."""
+    env = env if env is not None else os.environ
+    src = env.get("MULTIRUN_DEPLOY_KEY")
+    if not src or not Path(src).exists():
+        return None
+    dst = Path(tempfile.mkdtemp(prefix="mr-sshkey-")) / "key"
+    dst.write_bytes(Path(src).read_bytes())
+    dst.chmod(0o600)
+    cmd = (f"ssh -i {dst} -o IdentitiesOnly=yes "
+           "-o StrictHostKeyChecking=accept-new")
+    env["GIT_SSH_COMMAND"] = cmd
+    return cmd
+
+
 def main() -> None:
     """Init-container entrypoint: materialize from a rendered run config."""
     import yaml
     if len(sys.argv) != 3:
         raise SystemExit("usage: python -m harness.resources.worktree "
                          "<run.yaml> <root>")
+    prepare_deploy_key()
     cfg = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8"))
     src, root = cfg["source"], Path(sys.argv[2])
     workdir = materialize(root, src["repo"], src["ref"], root / "checkout")

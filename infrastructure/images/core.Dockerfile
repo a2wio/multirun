@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY core/ /app/
+# tasks ride along so the in-cluster controller can resolve a fanout's
+# task dir (task.md, checks, seeds) without any volume gymnastics
+COPY tasks/ /app/tasks/
 RUN pip install --no-cache-dir ".[k8s,results]"
 
 RUN useradd -m -u 1000 core

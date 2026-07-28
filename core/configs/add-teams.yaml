@@ -1,0 +1,26 @@
+# the first real fan-out: one sentence, ten agents, ten schemas. Every
+# run is the SAME task on the SAME model — the variant axis is the
+# variance itself: tenant column vs join table, backfill vs not, where
+# each agent decides personal stops and shared starts.
+global:
+  task: tasks/add-teams        # source + seed come from the task's source.yaml
+  model: sonnet
+  timeout: 30m
+  max_parallel: 3              # one subscription feeds all runs; 3 is its ceiling
+  neon:
+    project: silent-sunset-50603321   # the dedicated multirun project
+  env:
+    # the node is small; keep each run's node processes from ballooning
+    NODE_OPTIONS: "--max-old-space-size=1536"
+
+runs:
+  - id: "01"
+  - id: "02"
+  - id: "03"
+  - id: "04"
+  - id: "05"
+  - id: "06"
+  - id: "07"
+  - id: "08"
+  - id: "09"
+  - id: "10"

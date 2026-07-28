@@ -54,6 +54,24 @@ def _log(artifact_dir: Path, line: str) -> None:
         f.write(stamped + "\n")
 
 
+def materialize_creds(env: dict, home: Path) -> str:
+    """In-cluster, the subscription creds Secret mounts read-only outside
+    $HOME (the CLI needs a writable ~/.claude) — copy the credentials in.
+    Returns a line for the log; auth problems must be obvious, not a
+    mystery three runs deep."""
+    src = env.get("MULTIRUN_CLAUDE_CREDS")
+    if not src:
+        return ""  # local run: the real ~/.claude is already there
+    if not Path(src).exists():
+        return (f"claude creds: {src} is mounted but EMPTY — the agent will "
+                "fail auth; `multirun creds push` and re-run")
+    dst = home / ".claude" / ".credentials.json"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(Path(src).read_bytes())
+    dst.chmod(0o600)
+    return "claude creds: materialized into $HOME"
+
+
 def run(config_path: Path, extra_env: dict | None = None) -> int:
     cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
     workdir = Path(cfg["workdir"])
@@ -66,6 +84,11 @@ def run(config_path: Path, extra_env: dict | None = None) -> int:
                            "acquires nothing; whoever spawned this run owed "
                            "it a checkout")
         return 2
+
+    creds_line = materialize_creds(dict(os.environ),
+                                   Path(os.environ.get("HOME", "/home/agent")))
+    if creds_line:
+        _log(artifact_dir, creds_line)
 
     env = dict(cfg.get("env") or {})
     if cfg.get("dotenv"):

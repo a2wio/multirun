@@ -160,17 +160,31 @@ def _patch_local_paths(run_yaml: Path, task_dir: Path) -> None:
 
 class Controller:
     def __init__(self, cfg: FanoutConfig, config_path: Path, *,
-                 runner_image: str, namespace: str = "multirun"):
+                 runner_image: str, namespace: str = "multirun",
+                 stamp: str | None = None,
+                 artifacts_root: Path | None = None,
+                 artifacts_claim: str | None = None):
         self.cfg = cfg
-        self.plans = plan_mod.plan(cfg)
+        self.plans = plan_mod.plan(cfg, stamp)
         self.task_dir = _resolve_task_dir(config_path, cfg.runs[0].task)
         self.runner_image = runner_image
         self.namespace = namespace
+        # artifacts_root is where the shared volume is mounted HERE (and in
+        # the run pods); artifacts_claim is the PVC the run pods mount. Both
+        # unset = phase-1 behavior: emptyDir, artifacts die with the pod.
+        self.artifacts_root = Path(artifacts_root) if artifacts_root else None
+        self.artifacts_claim = artifacts_claim
         self.api = neon.NeonAPI()
         self.results = Results.open(os.environ.get("RESULTS_DATABASE_URL"))
         self.active: dict[str, plan_mod.RunPlan] = {}
+        self.started: dict[str, float] = {}  # job_name -> when; the reaper's clock
         self.queue = list(self.plans)
         self.branch_facts: dict[str, dict] = {}
+
+    def _artifact_dir(self, p: plan_mod.RunPlan) -> Path | None:
+        if self.artifacts_root is None:
+            return None
+        return self.artifacts_root / p.fanout / str(p.spec.id)
 
     def reconcile(self) -> bool:
         """One pass: spawn up to max_parallel, harvest finished runs.
@@ -199,38 +213,48 @@ class Controller:
         checks = {f.name: f.read_text(encoding="utf-8")
                   for f in sorted((self.task_dir / "checks").glob("*"))
                   if f.is_file()} if (self.task_dir / "checks").is_dir() else {}
+        art_dir = self._artifact_dir(p)
         manifests = [
             spawn.build_configmap(p, task_name=self.task_dir.name,
                                   task_md=(self.task_dir / "task.md").read_text(),
-                                  checks=checks, namespace=self.namespace),
+                                  checks=checks, namespace=self.namespace,
+                                  artifact_dir=str(art_dir) if art_dir else None),
             spawn.build_secret(p, database_url=facts["secret_database_url"],
                                namespace=self.namespace),
             spawn.build_job(p, runner_image=self.runner_image,
                             check_names=sorted(checks),
-                            namespace=self.namespace),
+                            namespace=self.namespace,
+                            artifacts_claim=self.artifacts_claim),
         ]
         spawn.apply(manifests, self.namespace)
         self.results.state(p.fanout, spec.id, RunState.RUNNING)
+        self.started[p.job_name] = time.time()
         self.active[p.job_name] = p
 
     def _harvest(self, p: plan_mod.RunPlan, status: str) -> None:
         spec, facts = p.spec, self.branch_facts.get(p.slug, {})
         self.results.state(p.fanout, spec.id, RunState.DIFFING)
-        # db diff before teardown; artifacts from the pod are a deploy-phase
-        # concern (emptyDir today — see design.md, deliberately deferred)
+        # db diff before teardown — it needs the branch alive. The diffs land
+        # next to the runner's own artifacts on the shared volume, so one
+        # directory answers for the whole run.
+        art_dir = self._artifact_dir(p)
+        outdir = art_dir if art_dir else Path(tempfile.mkdtemp(prefix=f"mr-{p.slug}-"))
         try:
             if facts.get("parent_id"):
                 parent_uri = self.api.connection_uri(
                     spec.neon.project, facts["parent_id"],
                     spec.neon.database, spec.neon.role)
-                capture.db_diff(parent_uri, facts["secret_database_url"],
-                                Path(tempfile.mkdtemp(prefix=f"mr-{p.slug}-")))
+                capture.db_diff(parent_uri, facts["secret_database_url"], outdir)
         finally:
             self.results.state(p.fanout, spec.id, RunState.TEARDOWN)
             handle = RunHandle(fanout=p.fanout, spec=spec, facts=facts)
             neon.NeonBranch(self.api).release(handle)
             self.results.resource(p.fanout, spec.id, "neon-branch", "released")
             spawn.delete_job(p.job_name, self.namespace)
+        meta_file = art_dir / "meta.json" if art_dir else None
+        if meta_file and meta_file.exists():
+            self.results.finish(p.fanout, spec.id, json.loads(
+                meta_file.read_text(encoding="utf-8")))
         final = RunState.DONE if status == "succeeded" else RunState.FAILED
         self.results.state(p.fanout, spec.id, final)
 

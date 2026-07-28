@@ -1,34 +1,74 @@
-# deploying — the phase after this one
+# deploying
 
-Nothing in here has been applied to the cluster yet. The manifests are
-written and the images build; what's below is the order that turns
-them on.
+Two repos own this:
 
-1. Build and push both images from the repo root:
+- **this one** — the images, the chart (the deployable shape), and the
+  harness that runs inside them
+- **kubeden/kubeden** — `k8s-cluster-configuration/applications/multirun/`,
+  the manifests ArgoCD actually syncs (his app-of-apps pattern; plain
+  yaml, pinned image tags). The chart and those manifests say the same
+  thing; the cluster listens to the gitops copy.
 
-       docker build -f infrastructure/images/core.Dockerfile   -t registry.k6nis.dev/multirun-core:0.1.0 .
-       docker build -f infrastructure/images/runner.Dockerfile -t registry.k6nis.dev/multirun-runner:0.1.0 .
-       docker push registry.k6nis.dev/multirun-core:0.1.0
-       docker push registry.k6nis.dev/multirun-runner:0.1.0
+## images
 
-2. Create the two secrets the chart expects but refuses to own:
+`.github/workflows/build-push.yml` builds both images on every push to
+main and on dispatch: `registry.k6nis.dev/multirun-core` and
+`multirun-runner`, tagged with the short sha (`:latest` only from
+main). Registry creds are the repo secrets `REGISTRY_USERNAME` /
+`REGISTRY_PASSWORD`, same as the other a2wio repos.
 
-       kubectl -n multirun create secret generic multirun-secrets \
-           --from-literal=NEON_API_KEY=... \
-           --from-literal=RESULTS_DATABASE_URL=...
-       multirun creds push          # local subscription creds -> claude-creds
+## secrets — created by hand, owned by nobody else
 
-3. `helm install multirun infrastructure/chart` — or apply
-   `infrastructure/argocd/application.yaml` and let argocd own it.
+Four secrets in the `multirun` namespace carry credentials, so no chart
+and no gitops repo ever contains them:
 
-4. Prove the cluster loop the same way the local loop was proven:
-   `multirun submit core/configs/smoke.yaml --runner-image ...` with a
-   single run before any real fan-out.
+    kubectl -n multirun create secret generic multirun-secrets \
+        --from-literal=NEON_API_KEY=... \
+        --from-literal=RESULTS_DATABASE_URL=...
+    multirun creds push                  # local claude login -> claude-creds
+    kubectl -n multirun create secret generic source-deploy-key \
+        --from-file=key=...              # read-only deploy key, private sources
+    # registry-credentials: the same .dockerconfigjson the other
+    # namespaces carry — copy it in from one of them
 
-Open before real use (known, deliberate):
+`claude-creds` is the one that rotates. The controller checks freshness
+every tick, refreshes with one no-op CLI turn, and pushes the rotated
+file back into the Secret — and it logs every outcome, so "why are runs
+failing auth" is answered by `kubectl logs deploy/multirun-core`, not
+by archaeology. If the controller itself lost the ability to refresh
+(creds long expired), `multirun creds push` from a logged-in machine
+resets the world.
 
-- artifacts land in the pod's emptyDir and die with it — object
-  storage (or a PVC) is the first deploy-phase task
-- the controller Deployment's command is a placeholder; the watch loop
-  that picks up submitted configs comes with it
-- private sources need a deploy key for the init container's clone
+## the controller
+
+The Deployment runs `multirun watch /etc/multirun` — the loop that
+picks up published fanouts (see the design doc). Submitting work is
+
+    multirun publish core/configs/<config>.yaml
+
+which renders the config (task source resolved, validated) into the
+`multirun-config` ConfigMap with a fresh stamp. The stamp names the
+instance; the results db remembers which instances already ran, so a
+controller restart re-runs nothing.
+
+Artifacts land on the `multirun-artifacts` PVC (`local-path`, one
+node), one dir per run; the controller writes the db diffs into the
+same dir at harvest and records `meta.json` into the results db. The
+PVC is the raw copy — the queryable truth is the results db.
+
+## proving it
+
+Same ladder as always, one rung at a time:
+
+1. `multirun local core/configs/smoke.yaml` — the loop, no cluster
+2. `multirun publish core/configs/smoke.yaml` — the loop, on the
+   cluster, one run
+3. a real fan-out
+
+## still open (known, deliberate)
+
+- the runner's ServiceAccount has no RBAC and must keep having none
+- `ttlSecondsAfterFinished` reaps finished Jobs after an hour; the
+  artifacts and the results db are the record, not the Job objects
+- artifacts accumulate on the PVC until pruned by hand (5Gi is weeks
+  of fan-outs; a retention sweep can come with the dashboard)

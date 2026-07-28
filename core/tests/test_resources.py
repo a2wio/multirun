@@ -133,3 +133,27 @@ def test_worktree_release_twice_is_fine(tmp_path, source_repo):
     tree.release(h)  # second release: nothing to do, nothing to raise
     import os
     assert not os.path.exists(workdir)
+
+
+def test_deploy_key_prep_is_a_noop_without_a_key():
+    from harness.resources.worktree import prepare_deploy_key
+    env = {}
+    assert prepare_deploy_key(env) is None
+    assert "GIT_SSH_COMMAND" not in env
+    env = {"MULTIRUN_DEPLOY_KEY": "/nowhere/key"}
+    assert prepare_deploy_key(env) is None
+
+
+def test_deploy_key_prep_makes_a_private_copy(tmp_path):
+    from pathlib import Path
+
+    from harness.resources.worktree import prepare_deploy_key
+    mounted = tmp_path / "key"
+    mounted.write_text("---fake key material---")
+    env = {"MULTIRUN_DEPLOY_KEY": str(mounted)}
+    cmd = prepare_deploy_key(env)
+    assert env["GIT_SSH_COMMAND"] == cmd and "ssh -i " in cmd
+    copied = Path(cmd.split()[2])
+    assert copied != mounted
+    assert copied.read_text() == "---fake key material---"
+    assert (copied.stat().st_mode & 0o777) == 0o600
