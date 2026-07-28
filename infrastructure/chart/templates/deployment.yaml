@@ -33,6 +33,9 @@ spec:
             - {{ .Values.images.runner }}
             - --namespace
             - {{ .Values.namespace }}
+          env:
+            - name: PYTHONUNBUFFERED   # logs are the interface; no buffering
+              value: "1"
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.env }}

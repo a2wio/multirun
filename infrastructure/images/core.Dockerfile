@@ -23,3 +23,5 @@ USER core
 ENV HOME=/home/core
 
 ENTRYPOINT ["multirun"]
+
+ENV PYTHONUNBUFFERED=1
