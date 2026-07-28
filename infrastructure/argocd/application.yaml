@@ -1,9 +1,11 @@
 # the live copy of this lives in kubeden/kubeden
-# (k8s-cluster-configuration/applications/multirun/), his app-of-apps —
-# argocd can't read this private repo (the a2wio org has deploy keys
-# disabled), so the manifests it syncs are the rendered ones there:
-# same objects, pinned tags. Render the chart, commit the yaml there.
-# This file is the reference shape.
+# (k8s-cluster-configuration/applications/multirun/application.yml),
+# his app-of-apps. This file is the reference shape.
+#
+# Two sources: argocd reads the chart straight from this repo (read-only
+# deploy key; the repository credential is a SealedSecret in kubeden's
+# platform/argocd), and the multirun SealedSecrets stay in kubeden —
+# they are sealed against his cluster, so that is where they belong.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,10 +13,13 @@ metadata:
   namespace: argocd
 spec:
   project: default
-  source:
-    repoURL: https://github.com/kubeden/kubeden.git
-    targetRevision: main
-    path: k8s-cluster-configuration/applications/multirun/base
+  sources:
+    - repoURL: git@github.com:a2wio/multirun.git
+      targetRevision: main
+      path: infrastructure/chart
+    - repoURL: https://github.com/kubeden/kubeden.git
+      targetRevision: main
+      path: k8s-cluster-configuration/applications/multirun/base
   destination:
     server: https://kubernetes.default.svc
     namespace: multirun

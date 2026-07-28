@@ -3,13 +3,13 @@
 Two repos own this:
 
 - **this one** — the images, the chart (the deployable shape), and the
-  harness that runs inside them
-- **kubeden/kubeden** — `k8s-cluster-configuration/applications/multirun/`,
-  the manifests ArgoCD actually syncs (his app-of-apps pattern; plain
-  yaml, pinned image tags). ArgoCD can't read this repo — it's private
-  and the a2wio org has deploy keys disabled — so the gitops copy is
-  rendered from the chart and committed there. The chart and those
-  manifests say the same thing; the cluster listens to the gitops copy.
+  harness that runs inside them. ArgoCD syncs `infrastructure/chart`
+  straight from here (read-only deploy key; the repository credential
+  is a SealedSecret in kubeden's `platform/argocd`).
+- **kubeden/kubeden** — `k8s-cluster-configuration/applications/multirun/`:
+  the Application itself (his app-of-apps pattern, two sources) and the
+  SealedSecrets, which are sealed against his cluster and so live
+  beside it, not here.
 
 Nothing reaches the cluster except through that Application. No
 `kubectl apply`, ever — if it isn't in kubeden/kubeden, it doesn't
@@ -24,8 +24,8 @@ main). Registry creds are the repo secrets `REGISTRY_USERNAME` /
 `REGISTRY_PASSWORD`, same as the other a2wio repos.
 
 Shipping a new build is a gitops commit, not a rollout command: pin the
-new sha in `chart/values.yaml` here, re-render, update the tags in the
-kubeden/kubeden deployment yaml, sync.
+new sha in `chart/values.yaml` on main, sync. Nothing to re-render,
+nowhere else to update.
 
 ## secrets
 
@@ -34,7 +34,7 @@ static and live in git as SealedSecrets — encrypted for this cluster's
 sealed-secrets controller, safe to commit, useless anywhere else:
 
 - `multirun-secrets` (NEON_API_KEY, RESULTS_DATABASE_URL) — sealed in
-  kubeden/kubeden beside the rendered manifests
+  kubeden/kubeden beside the Application
 - `source-deploy-key` (read-only deploy key for private task sources) —
   sealed, same place
 - `registry-credentials` — not ours at all: a kyverno policy clones it
@@ -48,13 +48,15 @@ The fourth, `claude-creds`, rotates on its own schedule and is NEVER a
 git object — a sealed blob would just be a stale credential with extra
 steps. It gets in exactly one way: `multirun creds push` from a
 logged-in machine, which copies the local claude login into the Secret
-by hand. The controller checks freshness
-every tick, refreshes with one no-op CLI turn, and pushes the rotated
-file back into the Secret — and it logs every outcome, so "why are runs
-failing auth" is answered by `kubectl logs deploy/multirun-core`, not
-by archaeology. If the controller itself lost the ability to refresh
-(creds long expired), `multirun creds push` from a logged-in machine
-resets the world.
+by hand. The controller watches the access token's expiry; when it
+gets close it runs one no-op CLI turn — the CLI refreshes its own
+token — and pushes the rotated file back into the Secret. The log
+speaks only when something changed or actually broke: a turn that
+fails auth means the refresh token is dead, and THAT line is loud, so
+"why are runs failing auth" is answered by
+`kubectl logs deploy/multirun-core`, not by archaeology. When it
+fires, `multirun creds push` from a logged-in machine resets the
+world.
 
 ## the controller
 

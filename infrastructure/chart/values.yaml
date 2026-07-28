@@ -1,11 +1,10 @@
 namespace: multirun
 
 images:
-  # pinned, not :latest — the gitops copy in kubeden/kubeden is rendered
-  # from these values, and argocd must never roll the controller because
-  # a build happened to finish
-  core: registry.k6nis.dev/multirun-core:ac54ccd
-  runner: registry.k6nis.dev/multirun-runner:ac54ccd
+  # pinned, not :latest — argocd syncs this chart from main, and it must
+  # never roll the controller because a build happened to finish
+  core: registry.k6nis.dev/multirun-core:96d967c
+  runner: registry.k6nis.dev/multirun-runner:96d967c
 
 # secrets the chart expects but never creates — they carry credentials:
 #   claude-creds          .credentials.json   (multirun creds push; rotates,
