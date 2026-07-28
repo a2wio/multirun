@@ -183,9 +183,16 @@ def _configmap_items(check_names: list[str]) -> list[dict]:
 def apply(manifests: list[dict], namespace: str = "multirun") -> None:
     from kubernetes import client, config, utils
     config.load_incluster_config() if _in_cluster() else config.load_kube_config()
-    utils.create_from_dict(client.ApiClient(), {"apiVersion": "v1", "kind": "List",
-                                                "items": manifests},
-                           namespace=namespace)
+    try:
+        utils.create_from_dict(client.ApiClient(),
+                               {"apiVersion": "v1", "kind": "List",
+                                "items": manifests},
+                               namespace=namespace)
+    except utils.FailToCreateError as e:
+        # already-exists is a retried launch converging, not a failure
+        if not all(getattr(exc, "status", None) == 409
+                   for exc in e.api_exceptions):
+            raise
 
 
 def job_status(job_name: str, namespace: str = "multirun") -> str:

@@ -133,9 +133,18 @@ def _run_fanout(cfg: FanoutConfig, stamp: str, instance: str, *, results,
         namespace=namespace, stamp=stamp,
         artifacts_root=artifacts_root, artifacts_claim=artifacts_claim)
     results.fanout(instance, cfg)
-    while ctl.reconcile():
-        reaper.reap(ctl)
-        # a fanout outlasts a token lifetime; runs yet to spawn need it fresh
-        creds_tick(creds_dir, namespace=namespace, secret=creds_secret, log=log)
+    # one transient api error must not abandon an hour of fan-out: log the
+    # cycle's failure and try again. Launch and harvest are idempotent, so
+    # a retried cycle converges instead of doubling anything.
+    while True:
+        try:
+            if not ctl.reconcile():
+                break
+            reaper.reap(ctl)
+            # a fanout outlasts a token lifetime; runs yet to spawn need it
+            creds_tick(creds_dir, namespace=namespace, secret=creds_secret, log=log)
+        except Exception:  # noqa: BLE001 — the fanout outlives its cycles
+            log(f"{instance}: reconcile cycle failed, retrying:\n"
+                + traceback.format_exc())
         time.sleep(10)
     log(f"{instance}: complete")
