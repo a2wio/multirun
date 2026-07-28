@@ -38,16 +38,16 @@ function phaseChips(events) {
 function checksSection(checks) {
   if (!checks?.checks?.length) return "";
   return `<section class="mt-8">
-    <h2 class="text-[11px] uppercase tracking-wider text-mute mb-3">checks · ${checks.passed}/${checks.total} passed</h2>
+    <h2 class="text-[10px] uppercase tracking-[0.14em] text-mute mb-3">checks · ${checks.passed}/${checks.total} passed</h2>
     <div class="space-y-2">
       ${checks.checks
         .map(
           (c) => `
       <details class="bg-panel border ${c.pass ? "border-edge" : "border-bad/40"} rounded-md">
-        <summary class="px-4 py-2.5 flex items-center gap-3">
-          <span class="font-mono text-[12px] ${c.pass ? "text-ok" : "text-bad"}">${c.pass ? "✓ pass" : "✗ fail"}</span>
-          <span class="font-mono text-[13px] text-ink">${esc(c.name)}</span>
-          <span class="font-mono text-[11px] text-mute ml-auto">${c.seconds}s · exit ${c.exit}</span>
+        <summary class="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span class="font-mono text-[12px] whitespace-nowrap ${c.pass ? "text-ok" : "text-bad"}">${c.pass ? "✓ pass" : "✗ fail"}</span>
+          <span class="font-mono text-[13px] text-ink break-all min-w-0">${esc(c.name)}</span>
+          <span class="font-mono text-[11px] text-mute ml-auto whitespace-nowrap">${c.seconds}s · exit ${c.exit}</span>
         </summary>
         <pre class="px-4 pb-3 font-mono text-[12px] text-sub whitespace-pre-wrap break-words">${esc(c.tail || "(no output)")}</pre>
       </details>`,
@@ -60,12 +60,12 @@ function checksSection(checks) {
 function filesSection(fanout, runId, files) {
   if (!files.length) return "";
   return `<section class="mt-8">
-    <h2 class="text-[11px] uppercase tracking-wider text-mute mb-3">artifacts</h2>
+    <h2 class="text-[10px] uppercase tracking-[0.14em] text-mute mb-3">artifacts</h2>
     <div class="flex flex-wrap gap-2">
       ${files
         .map(
           (f) => `<a href="/artifacts/${encodeURIComponent(fanout)}/${encodeURIComponent(runId)}/${encodeURIComponent(f.name)}"
-        class="px-3 py-1.5 rounded border border-edge bg-panel font-mono text-[12px] text-sub hover:text-ink hover:border-edge2">
+        class="px-3 py-1.5 rounded border border-edge bg-panel font-mono text-[12px] text-sub hover:text-ink hover:border-sub">
         ${esc(f.name)} <span class="text-mute">${(f.size / 1024).toFixed(1)}k</span></a>`,
         )
         .join("")}
@@ -80,14 +80,14 @@ function dbDiffSection(schemaDiff, dataDiff) {
   );
   if (!schemaDiff && !touched.length) return "";
   return `<section class="mt-8">
-    <h2 class="text-[11px] uppercase tracking-wider text-mute mb-3">what it did to the data</h2>
+    <h2 class="text-[10px] uppercase tracking-[0.14em] text-mute mb-3">what it did to the data</h2>
     ${
       touched.length
         ? `<div class="flex flex-wrap gap-2 mb-3">${touched
             .map(
               ([t, d]) => `<span class="px-2.5 py-1 rounded bg-panel border border-edge font-mono text-[12px]">
               <span class="text-ink">${esc(t)}</span>
-              ${d.only_in ? `<span class="text-accent"> new table</span>` : ""}
+              ${d.only_in ? `<span class="text-ink font-medium"> new table</span>` : ""}
               ${d.added ? `<span class="text-ok"> +${d.added}</span>` : ""}
               ${d.removed ? `<span class="text-bad"> −${d.removed}</span>` : ""}
             </span>`,
@@ -124,26 +124,26 @@ export function runPage({ run, events }, { checks, files, schemaDiff, dataDiff, 
   const meta = run.meta || {};
   const finished = ["done", "failed"].includes(run.state);
   const body = `
-  <div class="flex items-baseline justify-between mb-2">
-    <h1 class="font-mono text-xl text-ink">run ${esc(run_id)}</h1>
+  <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-2">
+    <h1 class="font-mono text-lg md:text-xl text-ink break-all min-w-0">run ${esc(run_id)}</h1>
     ${statePill(run.state)}
   </div>
   ${phaseChips(events)}
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
-    ${statTile("model", `<span class="text-base">${esc(run.model ?? "—")}</span>`)}
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 grid-flow-dense gap-2 md:gap-3 mt-6">
+    ${statTile("model", `<span class="text-sm md:text-base break-all">${esc(run.model ?? "—")}</span>`)}
     ${statTile("turns", run.num_turns ?? "—")}
     ${statTile("wall", fmtDur(run.wall_seconds))}
-    ${statTile("tokens", `<span class="text-base">${fmtTokens(run.tokens_in)} <span class="text-mute">in</span> · ${fmtTokens(run.tokens_out)} <span class="text-mute">out</span></span>`)}
+    ${statTile("tokens", `<span class="text-sm md:text-base">${fmtTokens(run.tokens_in)} <span class="text-mute">in</span> · ${fmtTokens(run.tokens_out)} <span class="text-mute">out</span></span>`, "", "col-span-2 md:col-span-1")}
     ${statTile("cost", meta.total_cost_usd != null ? "$" + Number(meta.total_cost_usd).toFixed(2) : "—")}
   </div>
 
   <section class="mt-8">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-[11px] uppercase tracking-wider text-mute">turns</h2>
+      <h2 class="text-[10px] uppercase tracking-[0.14em] text-mute">turns</h2>
       <span id="stream-status" class="font-mono text-[11px] ${finished ? "text-mute" : "text-run"}">${finished ? "replay" : "connecting…"}</span>
     </div>
     <div hx-ext="ws" ws-connect="/ws/turns/${encodeURIComponent(fanout)}/${encodeURIComponent(run_id)}">
-      <div id="turns" class="bg-panel border border-edge rounded-md px-4 py-2 max-h-[70vh] overflow-y-auto divide-y divide-edge/50"></div>
+      <div id="turns" class="bg-panel border border-edge rounded-md px-3 md:px-4 py-2 max-h-[70vh] overflow-y-auto divide-y divide-edge/50"></div>
     </div>
     <script>
       (function () {
