@@ -1,0 +1,66 @@
+# the front door: cert-manager terminates TLS on a per-app Gateway,
+# external-dns points the host at it — the same shape every k6nis.dev
+# app on this cluster uses. The host is a value because the project may
+# move under a different domain later; nothing else knows it.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: multirun-dashboard-tls
+  namespace: {{ .Values.namespace }}
+spec:
+  secretName: multirun-dashboard-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - {{ .Values.dashboard.host }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: multirun-dashboard-gateway
+  namespace: {{ .Values.namespace }}
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "{{ .Values.dashboard.host }}"
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 8443
+      hostname: {{ .Values.dashboard.host }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ''
+            kind: Secret
+            name: multirun-dashboard-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: multirun-dashboard
+  namespace: {{ .Values.namespace }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: multirun-dashboard-gateway
+      namespace: {{ .Values.namespace }}
+  hostnames:
+    - {{ .Values.dashboard.host }}
+  rules:
+    - backendRefs:
+        - group: ''
+          kind: Service
+          name: multirun-dashboard
+          port: 80
+          weight: 1
+      matches:
+        - path:
+            type: PathPrefix
+            value: /

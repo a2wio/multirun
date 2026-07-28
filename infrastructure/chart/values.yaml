@@ -5,6 +5,7 @@ images:
   # never roll the controller because a build happened to finish
   core: registry.k6nis.dev/multirun-core:96d967c
   runner: registry.k6nis.dev/multirun-runner:96d967c
+  dashboard: registry.k6nis.dev/multirun-dashboard:99b3362
 
 # secrets the chart expects but never creates — they carry credentials:
 #   claude-creds          .credentials.json   (multirun creds push; rotates,
@@ -13,11 +14,16 @@ images:
 #                         in kubeden/kubeden beside the rendered manifests
 #   source-deploy-key     key (read-only, private sources) — SealedSecret,
 #                         same place
+#   multirun-dashboard-secrets
+#                         DASHBOARD_USERNAME/PASSWORD + a select-only
+#                         DATABASE_URL for the dashboard — SealedSecret,
+#                         same place
 #   registry-credentials  .dockerconfigjson — kyverno clones it into every
 #                         namespace; nobody creates it here
 secrets:
   claudeCreds: claude-creds
   env: multirun-secrets
+  dashboard: multirun-dashboard-secrets
   registry: registry-credentials
 
 controller:
@@ -28,3 +34,8 @@ controller:
 artifacts:
   claim: multirun-artifacts
   size: 5Gi
+
+dashboard:
+  # a chart value because the project may move domains later (multirun
+  # under a2w.io is on the table) — nothing in code knows the host
+  host: multirun.k6nis.dev
