@@ -84,6 +84,9 @@ def test_job_shape():
     runner = pod["containers"][0]
     assert runner["command"] == ["multirun-runner", "/config/run.yaml"]
     assert runner["envFrom"] == [{"secretRef": {"name": p.secret_name}}]
+    # an agent run waits on the model; requesting half a core each once
+    # filled a 4-core node on paper and left runs Pending on 12% real use
+    assert runner["resources"]["requests"]["cpu"] == "150m"
 
 
 def test_no_api_key_path_anywhere_in_the_job():
