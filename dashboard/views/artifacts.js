@@ -30,7 +30,7 @@ export function dirPage(rel, entries, active) {
   const body = `
   <table class="w-full border-separate border-spacing-0">
     <thead>
-      <tr class="text-left text-[11px] uppercase tracking-wider text-mute">
+      <tr class="text-left text-[10px] uppercase tracking-[0.14em] text-mute">
         <th class="pb-2 font-medium">name</th>
         <th class="pb-2 font-medium text-right">size</th>
         <th class="pb-2 font-medium text-right">modified</th>
@@ -41,8 +41,8 @@ export function dirPage(rel, entries, active) {
         .map(
           (e) => `
       <tr>
-        <td class="py-2 border-t border-edge">
-          <a href="${base}/${encodeURIComponent(e.name)}" class="${e.dir ? "text-ink" : "text-sub"} hover:text-accent">
+        <td class="py-2 border-t border-edge max-w-[52vw] md:max-w-none">
+          <a href="${base}/${encodeURIComponent(e.name)}" class="${e.dir ? "text-ink" : "text-sub"} hover:text-ink hover:underline underline-offset-4 decoration-edge2 block truncate">
             ${e.dir ? `<span class="text-mute">▸</span> ${esc(e.name)}/` : esc(e.name)}
           </a>
         </td>
@@ -69,10 +69,10 @@ export function filePage(rel, { kindName, text, tooBig, size }, active) {
   if (tooBig) {
     rendered = `<div class="text-mute py-12 text-center">
       ${(size / 1024 / 1024).toFixed(1)}MB is past the inline limit —
-      <a class="text-accent" href="${rawHref}">download raw</a></div>`;
+      <a class="text-ink underline underline-offset-4" href="${rawHref}">download raw</a></div>`;
   } else if (kindName === "markdown") {
     rendered = `<article class="prose prose-invert prose-sm max-w-3xl
-      prose-headings:font-mono prose-code:text-accent prose-pre:bg-panel prose-pre:border prose-pre:border-edge">
+      prose-headings:font-mono prose-code:text-ink prose-pre:bg-panel prose-pre:border prose-pre:border-edge">
       ${marked.parse(text)}</article>`;
   } else if (kindName === "diff") {
     rendered = `<pre class="font-mono text-[12px] leading-relaxed overflow-x-auto">${diffColor(text)}</pre>`;
@@ -92,12 +92,12 @@ export function filePage(rel, { kindName, text, tooBig, size }, active) {
   <div class="flex items-center gap-3 mb-5">
     ${
       runMatch
-        ? `<a href="/instances/${encodeURIComponent(runMatch[1])}/runs/${encodeURIComponent(runMatch[2])}" class="px-3 py-1.5 rounded border border-accent/40 text-accent hover:bg-accent/10 text-xs font-mono">open as turn stream</a>`
+        ? `<a href="/instances/${encodeURIComponent(runMatch[1])}/runs/${encodeURIComponent(runMatch[2])}" class="px-3 py-1.5 rounded bg-ink text-bg hover:bg-white text-xs font-mono font-medium">open as turn stream</a>`
         : ""
     }
-    <a href="${rawHref}" class="px-3 py-1.5 rounded border border-edge2 text-sub hover:text-ink text-xs font-mono">raw</a>
+    <a href="${rawHref}" class="px-3 py-1.5 rounded border border-edge2 text-sub hover:text-ink hover:border-sub text-xs font-mono">raw</a>
   </div>
-  <div class="bg-panel border border-edge rounded-md px-6 py-5">${rendered}</div>`;
+  <div class="bg-panel border border-edge rounded-md px-4 py-4 md:px-6 md:py-5 overflow-x-auto">${rendered}</div>`;
   return page({
     title: rel,
     active: "artifacts",

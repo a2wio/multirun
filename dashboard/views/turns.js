@@ -38,13 +38,13 @@ export function renderEvent(ev) {
         <div class="mt-1 pl-3 border-l border-edge text-sub italic text-[13px] whitespace-pre-wrap break-words">${esc(ev.text)}</div>
       </details>`;
     case "text":
-      return `<div class="py-2 pl-3 border-l-2 border-accent/50 text-ink text-[13px] whitespace-pre-wrap break-words">${esc(ev.text)}</div>`;
+      return `<div class="py-2 pl-3 border-l-2 border-ink/40 text-ink text-[13px] whitespace-pre-wrap break-words">${esc(ev.text)}</div>`;
     case "tool_use": {
       const summary = toolInputSummary(ev.name, ev.input);
       const full = JSON.stringify(ev.input, null, 2);
       const needsFull = full.length > summary.length + 40 && full !== "{}";
       return `<div class="py-1 font-mono text-[12px]">
-        <span class="text-run">→ ${esc(ev.name)}</span>
+        <span class="text-ink font-medium">→ ${esc(ev.name)}</span>
         <span class="text-sub break-all">${esc(summary.slice(0, 300))}${summary.length > 300 ? "…" : ""}</span>
         ${
           needsFull
