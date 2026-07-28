@@ -25,6 +25,14 @@ def test_unreadable_creds_are_stale_not_a_crash():
     assert creds_stale("{}") is True
 
 
+def test_default_horizon_is_minutes_not_the_token_lifetime():
+    # access tokens are minted with under an hour on the clock, so an
+    # hour-wide default was true on every tick — the line cried wolf
+    assert creds_stale(_creds(1800)) is False
+    assert creds_stale(_creds(120)) is True
+    assert creds_stale(_creds(-600)) is True
+
+
 def test_task_dir_resolves_relative_to_the_config(tmp_path):
     (tmp_path / "tasks" / "smoke").mkdir(parents=True)
     (tmp_path / "tasks" / "smoke" / "task.md").write_text("do it")
