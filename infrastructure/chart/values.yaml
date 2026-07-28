@@ -1,14 +1,21 @@
 namespace: multirun
 
 images:
-  core: registry.k6nis.dev/multirun-core:latest
-  runner: registry.k6nis.dev/multirun-runner:latest
+  # pinned, not :latest — the gitops copy in kubeden/kubeden is rendered
+  # from these values, and argocd must never roll the controller because
+  # a build happened to finish
+  core: registry.k6nis.dev/multirun-core:ac54ccd
+  runner: registry.k6nis.dev/multirun-runner:ac54ccd
 
 # secrets the chart expects but never creates — they carry credentials:
-#   claude-creds          .credentials.json   (multirun creds push)
-#   multirun-secrets      NEON_API_KEY, RESULTS_DATABASE_URL
-#   source-deploy-key     key                 (read-only, for private sources)
-#   registry-credentials  .dockerconfigjson   (pulls from the private registry)
+#   claude-creds          .credentials.json   (multirun creds push; rotates,
+#                                              so it is never a git object)
+#   multirun-secrets      NEON_API_KEY, RESULTS_DATABASE_URL — SealedSecret
+#                         in kubeden/kubeden beside the rendered manifests
+#   source-deploy-key     key (read-only, private sources) — SealedSecret,
+#                         same place
+#   registry-credentials  .dockerconfigjson — kyverno clones it into every
+#                         namespace; nobody creates it here
 secrets:
   claudeCreds: claude-creds
   env: multirun-secrets
