@@ -62,3 +62,40 @@ def test_no_results_db_means_no_memory_and_no_crash():
     results = Results.open(None)
     assert isinstance(results, NullResults)
     assert results.fanout_exists("anything") is False
+
+
+def test_results_retry_reconnects_a_dead_connection(monkeypatch):
+    """Neon idles long-lived connections out; one dead-connection retry
+    against a fresh connection keeps the watch loop alive."""
+    import types
+
+    class FakeOperationalError(Exception):
+        pass
+
+    calls = {"connect": 0}
+
+    class FakeConn:
+        def close(self):
+            pass
+
+    def fake_connect(uri, autocommit):
+        calls["connect"] += 1
+        return FakeConn()
+
+    fake_psycopg = types.SimpleNamespace(OperationalError=FakeOperationalError,
+                                         connect=fake_connect)
+    import sys
+    monkeypatch.setitem(sys.modules, "psycopg", fake_psycopg)
+    r = Results("postgresql://fake")
+    assert calls["connect"] == 1
+
+    attempts = {"n": 0}
+
+    def flaky():
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise FakeOperationalError("SSL connection has been closed")
+        return "ok"
+
+    assert r._retry(flaky) == "ok"
+    assert calls["connect"] == 2  # reconnected before the second attempt
