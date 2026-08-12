@@ -1,0 +1,6 @@
+# the same tiny public repo smoke uses — this task needs a working tree
+# to write into, not a codebase to understand. Everything the runs are
+# compared on is the one file they each add, so the canvas should be
+# small, identical and fast to clone.
+repo: https://github.com/kubeden/kubeden.git
+ref: 5b1e367c02ee6a64af54cdb982bb0c677a08cf06
