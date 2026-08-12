@@ -1,0 +1,53 @@
+# case 2 of the multirun video: one design task, eight agents, and the
+# variant axis is WHO — model and how hard it was told to think. Every
+# run gets the identical prompt and writes the same one file, so the
+# eight pages can be put side by side and read as one comparison.
+#
+# Reasoning is not a config key: it rides in as MAX_THINKING_TOKENS,
+# which is the env var the CLI reads and the same one darling's own
+# harness sets (low 2000 / medium 8000 / high 16000 / max 32000).
+# Per-run env merges key-by-key over global, so each run keeps
+# NODE_OPTIONS and adds its own level.
+#
+# Run ids carry the arm — s/o/h/f for the model, the level after it —
+# so the axis is legible in the dashboard and in Neon without a join.
+global:
+  task: tasks/pangram-article
+  model: claude-sonnet-5
+  timeout: 30m
+  max_parallel: 3              # one subscription feeds all runs; 3 is its ceiling
+  neon:
+    project: silent-sunset-50603321   # the dedicated multirun project
+  env:
+    NODE_OPTIONS: "--max-old-space-size=1536"
+
+runs:
+  # sonnet, two rungs apart — the pair that differs only in reasoning
+  - id: "s-low"
+    env: {MAX_THINKING_TOKENS: "2000"}
+  - id: "s-high"
+    env: {MAX_THINKING_TOKENS: "16000"}
+
+  # opus, three rungs — low, high, and the ceiling, to see where it stops paying
+  - id: "o-low"
+    model: claude-opus-5
+    env: {MAX_THINKING_TOKENS: "2000"}
+  - id: "o-high"
+    model: claude-opus-5
+    env: {MAX_THINKING_TOKENS: "16000"}
+  - id: "o-max"
+    model: claude-opus-5
+    env: {MAX_THINKING_TOKENS: "32000"}
+
+  # haiku, same two rungs as sonnet — the visible floor of the grid
+  - id: "h-low"
+    model: claude-haiku-4-5
+    env: {MAX_THINKING_TOKENS: "2000"}
+  - id: "h-high"
+    model: claude-haiku-4-5
+    env: {MAX_THINKING_TOKENS: "16000"}
+
+  # exactly one fable: its weekly ceiling is separate and much smaller
+  - id: "f-med"
+    model: claude-fable-5
+    env: {MAX_THINKING_TOKENS: "8000"}
