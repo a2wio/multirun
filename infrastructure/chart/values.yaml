@@ -3,7 +3,7 @@ namespace: multirun
 images:
   # pinned, not :latest — argocd syncs this chart from main, and it must
   # never roll the controller because a build happened to finish
-  core: registry.k6nis.dev/multirun-core:96d967c
+  core: registry.k6nis.dev/multirun-core:c0612d0
   runner: registry.k6nis.dev/multirun-runner:96d967c
   dashboard: registry.k6nis.dev/multirun-dashboard:7bb1766
 
