@@ -1,0 +1,83 @@
+# the rerun. add-teams at n=30, split two ways: fifteen sonnet, fifteen
+# opus, same source sha and same task file as the July ten-run — so the
+# arms are comparable to each other AND to what's already in the results
+# db. The July post admitted a 5/5 split at n=10 can't pin a ratio; this
+# widens the sonnet arm and adds the question the ten-run couldn't ask,
+# which is whether a decision is model-shaped or task-shaped.
+#
+# ids carry the arm (s.. / o..) on purpose: run id becomes the branch,
+# job and artifact name, so the model is legible everywhere without a
+# join. The list is interleaved for the same reason the arms are equal —
+# a fan-out cut short still leaves two balanced halves.
+global:
+  task: tasks/add-teams        # source + seed come from the task's source.yaml
+  model: sonnet                # the default arm; the opus runs override below
+  timeout: 30m
+  max_parallel: 3              # one subscription feeds all runs; 3 is its ceiling
+  neon:
+    project: silent-sunset-50603321   # the dedicated multirun project
+  env:
+    # the node is small; keep each run's node processes from ballooning
+    NODE_OPTIONS: "--max-old-space-size=1536"
+
+runs:
+  - id: s01
+  - id: o01
+    model: opus
+    timeout: 45m               # opus is slower per turn; a timeout is a lost run
+  - id: s02
+  - id: o02
+    model: opus
+    timeout: 45m
+  - id: s03
+  - id: o03
+    model: opus
+    timeout: 45m
+  - id: s04
+  - id: o04
+    model: opus
+    timeout: 45m
+  - id: s05
+  - id: o05
+    model: opus
+    timeout: 45m
+  - id: s06
+  - id: o06
+    model: opus
+    timeout: 45m
+  - id: s07
+  - id: o07
+    model: opus
+    timeout: 45m
+  - id: s08
+  - id: o08
+    model: opus
+    timeout: 45m
+  - id: s09
+  - id: o09
+    model: opus
+    timeout: 45m
+  - id: s10
+  - id: o10
+    model: opus
+    timeout: 45m
+  - id: s11
+  - id: o11
+    model: opus
+    timeout: 45m
+  - id: s12
+  - id: o12
+    model: opus
+    timeout: 45m
+  - id: s13
+  - id: o13
+    model: opus
+    timeout: 45m
+  - id: s14
+  - id: o14
+    model: opus
+    timeout: 45m
+  - id: s15
+  - id: o15
+    model: opus
+    timeout: 45m
