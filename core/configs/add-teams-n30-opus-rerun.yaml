@@ -1,0 +1,45 @@
+# the opus arm, finished. the n=30 drained with sonnet 15/15 and opus
+# 5/15, and the ten opus losses are two different things:
+#
+#   o01 o05 o07 o13  hit the 45m ceiling with BOTH checks passing and a
+#                    tree captured — finished work whose per-run metrics
+#                    the timeout path discarded. not rerun: the design
+#                    data is real, and a rerun buys back only the metrics.
+#   o06 o08 o10 o11 o12 o15
+#                    died mid-agent, the runner container gone: no checks,
+#                    no metrics, and a schema snapshot taken from an agent
+#                    that was still working. those six are the hole in the
+#                    dataset, and this reruns exactly them.
+#
+# same task dir and the same source sha as add-teams-0728153047 and the
+# n=30, so every run in the pooled opus arm starts from the same tree.
+# ids carry an `r`: a rerun of that slot, not a new slot — the analysis
+# reads the r-runs as the arm and keeps the originals beside them.
+#
+# two changes, both of them things the first pass taught:
+#   max_parallel: 1 — an opus run is ~3x the wall of a sonnet one and far
+#     heavier while it works; three at once did not fit the runner pool's
+#     memory budget, and that is what killed these six. serial, whatever
+#     it costs in wall clock.
+#   timeout: 90m — four runs were still working at 45m, and measured opus
+#     agent time on this task is 30-42m, so 90m is a ceiling, not a plan.
+global:
+  name: add-teams-n30-opus-rerun
+  task: tasks/add-teams        # source + seed come from the task's source.yaml
+  model: opus
+  timeout: 90m
+  max_parallel: 1
+  neon:
+    project: silent-sunset-50603321   # the dedicated multirun project
+  env:
+    # unchanged from the n=30 on purpose — the runner env is part of what
+    # makes these runs comparable to the ones they stand in for
+    NODE_OPTIONS: "--max-old-space-size=1536"
+
+runs:
+  - id: o06r
+  - id: o08r
+  - id: o10r
+  - id: o11r
+  - id: o12r
+  - id: o15r
