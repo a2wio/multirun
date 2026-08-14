@@ -58,6 +58,21 @@ SELECT * FROM resources WHERE status <> 'released';
 SELECT state, at FROM events WHERE fanout = ? AND run_id = ? ORDER BY at;
 ```
 
+### when the recorded numbers are wrong
+
+A run whose session ends more than once records only its last segment:
+`num_turns`, `tokens_*` and `wall_seconds` in the db are the tail, not
+the run. The traces have all of it, so recompute rather than re-run:
+
+```sh
+.venv/bin/multirun recompute /artifacts/<fanout>          # --json for the rest
+```
+
+`seg` is how many times the session ended, `recorded` is what the run
+wrote into its own meta.json — the two columns disagreeing is the whole
+signal. `cost` is the one field that survives either way; the SDK
+reports it cumulative per session rather than per segment.
+
 ## leaked branches
 
 The ledger and the results db say what should exist; Neon says what

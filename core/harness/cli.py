@@ -170,6 +170,30 @@ def cmd_teardown(args) -> None:
     print(f"reaped {len(reaped)} branch(es)")
 
 
+def cmd_recompute(args) -> None:
+    """Per-run truth, read back from the traces on the artifacts volume.
+
+    Offline and read-only — it touches no cluster and no database, so it
+    is safe to run against an instance while the next one is going."""
+    from .results import trace as trace_mod
+    rows = trace_mod.walk(Path(args.artifacts_dir))
+    if args.json:
+        print(json.dumps(rows, indent=1))
+        return
+    print(f"{'run':<8}{'seg':>4}{'turns':>7}{'recorded':>10}"
+          f"{'out_tok':>10}{'cost':>9}  trace")
+    for r in rows:
+        usage = r.get("usage") or {}
+        cost = r.get("total_cost_usd")
+        recorded = r.get("recorded_num_turns")
+        state = ("no trace" if "complete" not in r else
+                 "ok" if r["complete"] else f"CUT ({r['last_message']})")
+        print(f"{r['run']:<8}{r['segments']:>4}{r.get('num_turns', 0):>7}"
+              f"{'-' if recorded is None else recorded:>10}"
+              f"{usage.get('output_tokens', 0):>10}"
+              f"{'-' if cost is None else format(cost, '.2f'):>9}  {state}")
+
+
 def cmd_db_migrate(args) -> None:
     uri = os.environ.get("RESULTS_DATABASE_URL")
     if not uri:
@@ -283,6 +307,11 @@ def main() -> None:
     p.add_argument("--project", required=True, help="neon project id")
     p.add_argument("--min-age", type=int, default=3600)
     p.add_argument("--namespace", default="multirun")
+
+    p = add("recompute", cmd_recompute,
+            help="per-run turns/tokens/cost, summed from the traces")
+    p.add_argument("artifacts_dir", help="one instance's artifacts directory")
+    p.add_argument("--json", action="store_true")
 
     db = sub.add_parser("db").add_subparsers(dest="db_command", required=True)
     db.add_parser("migrate").set_defaults(fn=cmd_db_migrate)
